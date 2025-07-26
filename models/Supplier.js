@@ -103,25 +103,30 @@ const supplierSchema = new mongoose.Schema({
   },
   
   // Location Details
+  // Around line 108-125, update the dispatchLocation schema:
+
+// COMPLETELY REPLACE the dispatchLocation section (around line 107-126):
+
+  // Location Details
+  // REPLACE the dispatchLocation section (around line 107-126):
+
+  // Location Details
   dispatchLocation: {
     address: {
       type: String,
       required: [true, 'Dispatch address is required']
     },
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
     coordinates: {
-      type: {
-        type: String,
-        enum: ['Point'],
-        default: 'Point'
-      },
-      coordinates: {
-        type: [Number], // [longitude, latitude]
-        required: true,
-        index: '2dsphere'
-      }
+      type: [Number], // [longitude, latitude]
+      default: [0, 0],
+      index: '2dsphere'
     }
-  },
-  
+  },  
   // Bank Details
   bankDetails: {
     bankName: {
@@ -146,11 +151,16 @@ const supplierSchema = new mongoose.Schema({
       type: String,
       required: [true, 'Branch name is required']
     },
+    // Around line 155, update the upiId field:
+
+// REPLACE the upiId field (around line 154-162):
+
     upiId: {
       type: String,
-      required: [true, 'UPI ID is required'],
+      required: false,
       validate: {
         validator: function(v) {
+          if (!v) return true;
           return /^[\w\.\-_]{3,}@[a-zA-Z]{3,}$/.test(v);
         },
         message: 'Please provide a valid UPI ID'
