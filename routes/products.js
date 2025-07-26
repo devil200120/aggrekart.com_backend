@@ -6,6 +6,9 @@ const Supplier = require('../models/Supplier');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { uploadImages } = require('../utils/cloudinary');
 const router = express.Router();
+// Add this import at the top with other imports (around line 6):
+
+const Order = require('../models/Order');
 
 // Product categories and subcategories
 const productCategories = {
@@ -217,23 +220,40 @@ query('brand').optional().isString().withMessage('Invalid brand'),
     
 
     // Transform products for frontend compatibility
-    const transformedProducts = products.map(product => {
-      const productObj = product.toObject ? product.toObject() : product;
-      
-      return {
-        ...productObj,
-        // Add frontend-expected fields
-        price: productObj.pricing?.basePrice || 0,
-        originalPrice: productObj.pricing?.originalPrice || null,
-        inStock: (productObj.stock?.available || 0) > (productObj.stock?.reserved || 0),
-        image: productObj.images?.find(img => img.isPrimary)?.url || productObj.images?.[0]?.url || null,
-        // Keep original structure for backward compatibility
-        pricing: productObj.pricing,
-        stock: productObj.stock,
-        images: productObj.images
-      };
-    });
-
+    // Transform products for frontend compatibility
+// Transform products for frontend compatibility
+const transformedProducts = products.map(product => {
+  const productObj = product.toObject ? product.toObject() : product;
+  
+  // Get primary image or first available image
+  let imageUrl = null;
+  if (productObj.images && productObj.images.length > 0) {
+    const primaryImage = productObj.images.find(img => img.isPrimary);
+    imageUrl = primaryImage ? primaryImage.url : productObj.images[0].url;
+  }
+  
+  return {
+    ...productObj,
+    // Add frontend-expected fields
+    price: productObj.pricing?.basePrice || 0,
+    originalPrice: productObj.pricing?.originalPrice || null,
+    inStock: (productObj.stock?.available || 0) > (productObj.stock?.reserved || 0),
+    image: imageUrl,
+    // Fix supplier information
+    supplier: {
+      _id: productObj.supplier?._id,
+      companyName: productObj.supplier?.companyName || 'Unknown Supplier',
+      rating: productObj.supplier?.rating || { average: 0, count: 0 },
+      isApproved: productObj.supplier?.isApproved || false,
+      dispatchLocation: productObj.supplier?.dispatchLocation
+    },
+    supplierName: productObj.supplier?.companyName || 'Unknown Supplier',
+    // Keep original structure for backward compatibility
+    pricing: productObj.pricing,
+    stock: productObj.stock,
+    images: productObj.images
+  };
+});
     const totalPages = Math.ceil(total / parseInt(limit));
     res.json({
       success: true,
@@ -705,6 +725,10 @@ router.put('/:productId/images/:imageId/primary', auth, authorize('supplier'), a
 // @route   DELETE /api/products/:productId
 // @desc    Delete/Deactivate product
 // @access  Private (Supplier)
+// Replace the delete route (around lines 708-740):
+
+// Replace the delete route (around lines 708-740):
+
 router.delete('/:productId', auth, authorize('supplier'), async (req, res, next) => {
   try {
     const { productId } = req.params;
@@ -725,16 +749,36 @@ router.delete('/:productId', auth, authorize('supplier'), async (req, res, next)
       return next(new ErrorHandler('Product not found or access denied', 404));
     }
 
-    // Soft delete - just deactivate
-    product.isActive = false;
-    await product.save();
-
-    res.json({
-      success: true,
-      message: 'Product deactivated successfully'
+    // Check if product has any orders - if yes, just deactivate, if no, delete completely
+    const hasOrders = await Order.findOne({
+      'items.product': product._id
     });
 
+    if (hasOrders) {
+      // Soft delete if there are orders
+      product.isActive = false;
+      await product.save();
+      
+      console.log(`Product ${product.name} soft deleted due to existing orders`);
+      
+      res.json({
+        success: true,
+        message: 'Product removed from your catalog (archived due to order history)'
+      });
+    } else {
+      // Hard delete if no orders
+      await Product.findByIdAndDelete(product._id);
+      
+      console.log(`Product ${product.name} permanently deleted`);
+      
+      res.json({
+        success: true,
+        message: 'Product deleted permanently'
+      });
+    }
+
   } catch (error) {
+    console.error('Delete product error:', error);
     next(error);
   }
 });
@@ -742,14 +786,29 @@ router.delete('/:productId', auth, authorize('supplier'), async (req, res, next)
 // @route   GET /api/products/supplier/my-products
 // @desc    Get supplier's products
 // @access  Private (Supplier)
+// Update the validation rules:
+// Replace lines 746-752 with this updated validation:
+// Replace the entire /supplier/my-products route (lines 746-875) with this:
+// Replace everything from line 748 to 959 with this comprehensive solution:
+
 router.get('/supplier/my-products', auth, authorize('supplier'), [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
-  query('status').optional().isIn(['all', 'active', 'inactive', 'pending', 'approved']).withMessage('Invalid status')
+  query('status').optional().custom((value) => {
+    // Allow empty strings and valid status values
+    if (value === '' || value === undefined || ['all', 'active', 'inactive', 'pending', 'approved'].includes(value)) {
+      return true;
+    }
+    throw new Error('Invalid status');
+  }),
+  query('search').optional().isString().withMessage('Search must be a string'),
+  query('category').optional().isString().withMessage('Category must be a string'),
+  query('sortBy').optional().isString().withMessage('SortBy must be a string')
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -757,48 +816,210 @@ router.get('/supplier/my-products', auth, authorize('supplier'), [
       });
     }
 
+    // Clean query parameters - remove empty strings and undefined values
+    const cleanParams = {};
+    Object.keys(req.query).forEach(key => {
+      const value = req.query[key];
+      if (value !== '' && value !== undefined && value !== null) {
+        cleanParams[key] = value;
+      }
+    });
+
     const {
       page = 1,
       limit = 10,
-      status = 'all'
-    } = req.query;
+      status = 'all',
+      search = '',
+      category = '',
+      sortBy = 'newest'
+    } = cleanParams;
 
-    // Find supplier
+    console.log('=== SUPPLIER PRODUCTS DEBUG ===');
+    console.log('User ID:', req.user._id);
+    console.log('Cleaned query params:', { page, limit, status, search, category, sortBy });
+
+    // Check if supplier profile exists
     const supplier = await Supplier.findOne({ user: req.user._id });
     if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
+      console.log('❌ Supplier profile not found for user:', req.user._id);
+      return res.json({
+        success: true,
+        message: 'Supplier profile not found. Please complete your supplier registration first.',
+        data: {
+          products: [],
+          pagination: {
+            currentPage: 1,
+            totalPages: 0,
+            totalItems: 0,
+            itemsPerPage: parseInt(limit),
+            hasNext: false,
+            hasPrev: false
+          },
+          stats: {
+            total: 0,
+            active: 0,
+            pending: 0,
+            inactive: 0
+          },
+          needsProfile: true
+        }
+      });
     }
 
-    // Build filter
-    const filter = { supplier: supplier._id };
+    console.log('✅ Found supplier:', {
+      id: supplier._id,
+      companyName: supplier.companyName,
+      isApproved: supplier.isApproved,
+      isActive: supplier.isActive
+    });
+
+    // Debug: Check if any products exist for this supplier AT ALL
+    const allProductsForSupplier = await Product.find({ supplier: supplier._id });
+    console.log('📦 Total products in database for this supplier:', allProductsForSupplier.length);
     
-    switch (status) {
-      case 'active':
-        filter.isActive = true;
-        filter.isApproved = true;
-        break;
-      case 'inactive':
-        filter.isActive = false;
-        break;
-      case 'pending':
-        filter.isApproved = false;
-        break;
-      case 'approved':
-        filter.isApproved = true;
-        break;
-      // 'all' - no additional filter
+    if (allProductsForSupplier.length > 0) {
+      console.log('📋 Sample products:');
+      allProductsForSupplier.slice(0, 3).forEach((p, index) => {
+        console.log(`  ${index + 1}. ${p.name} | Active: ${p.isActive} | Approved: ${p.isApproved} | Category: ${p.category}`);
+      });
     }
+
+    // Build filter - START WITH BASIC FILTER
+    const filter = { supplier: supplier._id };
+    console.log('🔍 Base filter:', filter);
+    
+    // Handle status filter - BE MORE FLEXIBLE
+    if (status && status !== 'all' && status.trim() !== '') {
+      console.log('📊 Applying status filter:', status.trim());
+      switch (status.trim()) {
+        case 'active':
+          filter.isActive = true;
+          filter.isApproved = true;
+          break;
+        case 'inactive':
+          filter.isActive = false;
+          break;
+        case 'pending':
+          filter.isApproved = false;
+          break;
+        case 'approved':
+          filter.isApproved = true;
+          break;
+        default:
+          // Don't add any status filter for unknown status
+          break;
+      }
+    }
+
+    // Handle search filter
+    if (search && search.trim() !== '') {
+      const searchTerm = search.trim();
+      console.log('🔎 Applying search filter:', searchTerm);
+      filter.$or = [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { description: { $regex: searchTerm, $options: 'i' } },
+        { brand: { $regex: searchTerm, $options: 'i' } }
+      ];
+    }
+
+    // Handle category filter
+    if (category && category.trim() !== '') {
+      console.log('📂 Applying category filter:', category.trim());
+      filter.category = category.trim();
+    }
+
+    console.log('🎯 Final filter:', JSON.stringify(filter, null, 2));
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
+    // Handle sorting
+    let sortOptions = { createdAt: -1 }; // default newest first
+    if (sortBy && sortBy.trim() !== '') {
+      switch (sortBy.trim()) {
+        case 'oldest':
+          sortOptions = { createdAt: 1 };
+          break;
+        case 'name':
+          sortOptions = { name: 1 };
+          break;
+        case 'price-low':
+          sortOptions = { 'pricing.basePrice': 1 };
+          break;
+        case 'price-high':
+          sortOptions = { 'pricing.basePrice': -1 };
+          break;
+        default:
+          sortOptions = { createdAt: -1 };
+      }
+    }
+
+    console.log('📈 Sort options:', sortOptions);
+    console.log('📄 Pagination - Skip:', skip, 'Limit:', parseInt(limit));
+
+    // Query products with detailed logging
     const products = await Product.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+  .populate('supplier', 'companyName dispatchLocation rating isApproved')
+  .sort(sortOptions)
+  .skip(skip)
+  .limit(parseInt(limit));
+
+    console.log('📊 Query results:');
+    console.log('  - Products found:', products.length);
 
     const total = await Product.countDocuments(filter);
     const totalPages = Math.ceil(total / parseInt(limit));
 
+    console.log('  - Total matching documents:', total);
+    console.log('  - Total pages:', totalPages);
+
+    // Transform products to match frontend expectations
+    // Transform products to match frontend expectations
+// Transform products to match frontend expectations
+const transformedProducts = products.map((product, index) => {
+  const productObj = product.toObject();
+  
+  // Determine status based on isActive and isApproved
+  let status = 'pending';
+  if (productObj.isActive && productObj.isApproved) {
+    status = 'active';
+  } else if (!productObj.isActive) {
+    status = 'inactive';
+  } else if (!productObj.isApproved) {
+    status = 'pending';
+  }
+
+  // Get primary image or first image
+  let imageUrl = null;
+  if (productObj.images && productObj.images.length > 0) {
+    const primaryImage = productObj.images.find(img => img.isPrimary);
+    imageUrl = primaryImage ? primaryImage.url : productObj.images[0].url;
+  }
+
+  console.log(`  ${index + 1}. ${productObj.name} | Status: ${status} | Price: ₹${productObj.pricing?.basePrice || 0} | Supplier: ${productObj.supplier?.companyName || 'Unknown'} | Image: ${imageUrl ? 'Yes' : 'No'}`);
+
+  return {
+    ...productObj,
+    // Add frontend-expected fields
+    price: productObj.pricing?.basePrice || 0,
+    unit: productObj.pricing?.unit || '',
+    stockQuantity: productObj.stock?.available || 0,
+    status: status,
+    // Fix image handling
+    images: productObj.images || [],
+    primaryImage: imageUrl,
+    // Ensure supplier info is properly formatted
+    supplier: {
+      _id: productObj.supplier?._id,
+      companyName: productObj.supplier?.companyName || 'Unknown Supplier',
+      rating: productObj.supplier?.rating || { average: 0, count: 0 },
+      isApproved: productObj.supplier?.isApproved || false
+    },
+    supplierName: productObj.supplier?.companyName || 'Unknown Supplier',
+    // Keep original structure for compatibility
+    pricing: productObj.pricing,
+    stock: productObj.stock
+  };
+});
     // Get product statistics
     const stats = {
       total: await Product.countDocuments({ supplier: supplier._id }),
@@ -807,25 +1028,35 @@ router.get('/supplier/my-products', auth, authorize('supplier'), [
       inactive: await Product.countDocuments({ supplier: supplier._id, isActive: false })
     };
 
-    res.json({
+    console.log('📈 Stats:', stats);
+
+    const responseData = {
       success: true,
       data: {
-        products,
+        products: transformedProducts,
         pagination: {
           currentPage: parseInt(page),
           totalPages,
           totalItems: total,
-          itemsPerPage: parseInt(limit)
+          itemsPerPage: parseInt(limit),
+          hasNext: parseInt(page) < totalPages,
+          hasPrev: parseInt(page) > 1
         },
-        stats
+        stats,
+        needsProfile: false
       }
-    });
+    };
+
+    console.log('✅ Sending response with', transformedProducts.length, 'products');
+    console.log('=== END DEBUG ===');
+
+    res.json(responseData);
 
   } catch (error) {
+    console.error('❌ Products API error:', error);
     next(error);
   }
 });
-
 // @route   POST /api/products/:productId/reviews
 // @desc    Add product review
 // @access  Private (Customer)
