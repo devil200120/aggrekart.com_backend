@@ -74,6 +74,14 @@ router.post('/register-new', [
       annualTurnover
     } = req.body;
 
+  console.log('=== BACKEND RECEIVED DATA ===');
+console.log('Email:', email);
+console.log('Phone:', phoneNumber);
+console.log('Business Name:', businessName);
+console.log('GST Number:', gstNumber);
+console.log('Bank Details:', JSON.stringify(bankDetails, null, 2));
+console.log('Full Request Body:', JSON.stringify(req.body, null, 2));
+console.log('=== END BACKEND DATA ===');
     // Check if user already exists
     const existingUser = await User.findOne({
       $or: [{ email: email.toLowerCase() }, { phoneNumber }]
@@ -157,12 +165,12 @@ router.post('/register-new', [
       },
       isApproved: false, // Will need admin approval
       isActive: false,   // Will be activated after approval
+      // REPLACE the dispatchLocation creation (around line 158-165):
+
       dispatchLocation: {
         address: businessAddress,
-        coordinates: {
-          latitude: 0,
-          longitude: 0
-        }
+        type: 'Point',
+        coordinates: [0, 0] // [longitude, latitude]
       }
     });
 
@@ -211,10 +219,36 @@ router.post('/register-new', [
     });
 
   } catch (error) {
-    console.error('Supplier registration error:', error);
-    next(error);
+  // Enhanced error logging for debugging
+  console.error('=== SUPPLIER REGISTRATION ERROR ===');
+  console.error('Error Name:', error.name);
+  console.error('Error Message:', error.message);
+  
+  // Log validation errors if they exist
+  if (error.errors) {
+    console.error('Validation Errors:', error.errors);
   }
-});
+  
+  // Log the full error object for debugging
+  console.error('Full Error Object:', {
+    name: error.name,
+    message: error.message,
+    errors: error.errors,
+    code: error.code,
+    keyPattern: error.keyPattern,
+    keyValue: error.keyValue
+  });
+  
+  // Log the stack trace for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.error('Stack Trace:', error.stack);
+  }
+  
+  console.error('=== END ERROR LOG ===');
+  
+  next(error);
+}
+})
 
 // Keep the existing auth-required route below...
 
@@ -541,6 +575,11 @@ router.put('/transport-rates', auth, authorize('supplier'), [
 // @route   GET /api/suppliers/dashboard
 // @desc    Get supplier dashboard data
 // @access  Private (Supplier)
+// Replace the existing dashboard route (lines 575-643) with this enhanced version:
+
+// @route   GET /api/suppliers/dashboard
+// @desc    Get supplier dashboard data
+// @access  Private (Supplier)
 router.get('/dashboard', auth, authorize('supplier'), async (req, res, next) => {
   try {
     const supplier = await Supplier.findOne({ user: req.user._id });
@@ -548,31 +587,69 @@ router.get('/dashboard', auth, authorize('supplier'), async (req, res, next) => 
       return next(new ErrorHandler('Supplier profile not found', 404));
     }
 
+    const { days = 30 } = req.query;
+    const daysAgo = new Date();
+    daysAgo.setDate(daysAgo.getDate() - parseInt(days));
+
     // Get product statistics
-    const productStats = {
-      total: await Product.countDocuments({ supplier: supplier._id }),
-      active: await Product.countDocuments({ supplier: supplier._id, isActive: true, isApproved: true }),
-      pending: await Product.countDocuments({ supplier: supplier._id, isApproved: false }),
-      inactive: await Product.countDocuments({ supplier: supplier._id, isActive: false })
+    const productStats = await Product.aggregate([
+      { $match: { supplier: supplier._id } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          active: { $sum: { $cond: [{ $and: ['$isActive', '$isApproved'] }, 1, 0] } },
+          pending: { $sum: { $cond: ['$isApproved', 0, 1] } },
+          inactive: { $sum: { $cond: ['$isActive', 0, 1] } },
+          totalViews: { $sum: '$viewCount' },
+          totalSales: { $sum: '$salesCount' },
+          avgRating: { $avg: '$averageRating' },
+          totalReviews: { $sum: '$totalReviews' }
+        }
+      }
+    ]);
+
+    const productStatsData = productStats[0] || {
+      total: 0, active: 0, pending: 0, inactive: 0,
+      totalViews: 0, totalSales: 0, avgRating: 0, totalReviews: 0
     };
 
     // Get recent products
     const recentProducts = await Product.find({ supplier: supplier._id })
       .sort({ createdAt: -1 })
       .limit(5)
-      .select('name category isActive isApproved createdAt');
+      .select('name category subcategory pricing.basePrice stock.available isActive isApproved createdAt images')
+      .lean();
 
-    // Calculate this month's performance
-    const currentMonth = new Date();
-    currentMonth.setDate(1);
-    
-    const monthlyStats = {
-      orders: supplier.totalOrders,
-      revenue: supplier.totalRevenue,
-      // These would be calculated from actual orders
-      newOrders: 0,
-      monthlyRevenue: 0
-    };
+    // Get top performing products
+    const topProducts = await Product.find({ 
+      supplier: supplier._id,
+      isActive: true,
+      isApproved: true 
+    })
+      .sort({ salesCount: -1, viewCount: -1 })
+      .limit(5)
+      .select('name category salesCount viewCount averageRating totalReviews pricing.basePrice images')
+      .lean();
+
+    // Mock sales data for the period (replace with actual order data when available)
+    const salesData = [];
+    for (let i = parseInt(days); i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      salesData.push({
+        date: date.toISOString().split('T')[0],
+        revenue: Math.floor(Math.random() * 50000) + 10000, // Mock data
+        orders: Math.floor(Math.random() * 10) + 1 // Mock data
+      });
+    }
+
+    // Calculate growth metrics (mock data - replace with actual calculations)
+    const previousPeriodRevenue = 150000; // Mock previous period
+    const currentRevenue = supplier.totalRevenue || 0;
+    const revenueGrowth = previousPeriodRevenue > 0 
+      ? ((currentRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100 
+      : 0;
 
     const dashboardData = {
       supplier: {
@@ -580,21 +657,58 @@ router.get('/dashboard', auth, authorize('supplier'), async (req, res, next) => 
         supplierId: supplier.supplierId,
         isApproved: supplier.isApproved,
         rating: supplier.rating,
-        memberSince: supplier.createdAt
+        memberSince: supplier.createdAt,
+        location: supplier.businessAddress
       },
       stats: {
-        products: productStats,
-        orders: monthlyStats,
-        rating: supplier.rating.average,
-        totalReviews: supplier.rating.count
+        totalRevenue: currentRevenue,
+        totalOrders: supplier.totalOrders || 0,
+        totalProducts: productStatsData.total,
+        averageOrderValue: supplier.totalOrders > 0 ? currentRevenue / supplier.totalOrders : 0,
+        revenueGrowth: revenueGrowth,
+        ordersGrowth: Math.floor(Math.random() * 40) - 20, // Mock data
+        productsGrowth: Math.floor(Math.random() * 30) - 10, // Mock data
+        aovGrowth: Math.floor(Math.random() * 25) - 10, // Mock data
+        productViews: productStatsData.totalViews,
+        totalSales: productStatsData.totalSales,
+        avgProductRating: productStatsData.avgRating || 0,
+        totalReviews: productStatsData.totalReviews
       },
-      recentProducts,
+      products: {
+        total: productStatsData.total,
+        active: productStatsData.active,
+        pending: productStatsData.pending,
+        inactive: productStatsData.inactive,
+        recent: recentProducts,
+        topPerforming: topProducts
+      },
+      salesData,
       approvalStatus: {
         isApproved: supplier.isApproved,
         message: supplier.isApproved 
           ? 'Your account is approved and active' 
-          : 'Your account is pending approval'
-      }
+          : 'Your account is pending approval. You can add products but they won\'t be visible until approved.'
+      },
+      notifications: [
+        ...(supplier.isApproved ? [] : [{
+          type: 'warning',
+          title: 'Account Pending Approval',
+          message: 'Complete your profile verification to start selling.',
+          action: { text: 'Complete Profile', link: '/supplier/profile' }
+        }]),
+        ...(productStatsData.total < 5 ? [{
+          type: 'info',
+          title: 'Add More Products',
+          message: 'Boost your sales by adding more products to your catalog.',
+          action: { text: 'Add Product', link: '/supplier/products/add' }
+        }] : []),
+        ...(productStatsData.pending > 0 ? [{
+          type: 'info',
+          title: `${productStatsData.pending} Products Pending`,
+          message: 'Your products are being reviewed by our team.',
+          action: null
+        }] : [])
+      ]
     };
 
     res.json({
@@ -603,10 +717,10 @@ router.get('/dashboard', auth, authorize('supplier'), async (req, res, next) => 
     });
 
   } catch (error) {
+    console.error('Dashboard API error:', error);
     next(error);
   }
 });
-
 // @route   GET /api/suppliers/nearby
 // @desc    Get nearby suppliers for customers
 // @access  Public
@@ -789,5 +903,75 @@ router.post('/documents/upload', auth, authorize('supplier'), async (req, res, n
     next(error);
   }
 });
+// Add these to your routes/suppliers.js file:
 
+// @route   GET /api/suppliers/stats
+// @desc    Get supplier statistics for dashboard
+// @access  Private (Supplier)
+router.get('/stats', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    const { days = 30 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Calculate stats here
+    const stats = {
+      totalRevenue: 0,
+      totalOrders: 0,
+      totalProducts: 0,
+      averageOrderValue: 0,
+      revenueGrowth: 0,
+      ordersGrowth: 0,
+      productsGrowth: 0,
+      aovGrowth: 0
+    };
+
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/suppliers/analytics/products
+// @desc    Get product analytics
+// @access  Private (Supplier)
+router.get('/analytics/products', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    // Get product performance data
+    const products = []; // Implement product analytics logic
+
+    res.json({ success: true, data: products });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/suppliers/analytics/sales
+// @desc    Get sales analytics
+// @access  Private (Supplier)
+router.get('/analytics/sales', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    // Get sales analytics data
+    const salesData = []; // Implement sales analytics logic
+
+    res.json({ success: true, data: salesData });
+  } catch (error) {
+    next(error);
+  }
+});
 module.exports = router;
