@@ -58,7 +58,9 @@ const corsOptions = {
     'Accept',
     'Origin',
     'Cache-Control',
-    'Pragma'
+    'Pragma',
+    'User-Agent', // Important for mobile
+    'X-Mobile-App'
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   optionsSuccessStatus: 200, // Support legacy browsers
