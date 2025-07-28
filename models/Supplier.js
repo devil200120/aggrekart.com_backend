@@ -13,17 +13,21 @@ const supplierSchema = new mongoose.Schema({
   },
   
   // Business Details
-  gstNumber: {
-    type: String,
-    required: [true, 'GST number is required'],
-    unique: true,
-    validate: {
-      validator: function(v) {
-        return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
-      },
-      message: 'Please provide a valid GST number'
-    }
-  },
+  // Replace the gstNumber field definition (around line 15-25):
+
+gstNumber: {
+  type: String,
+  sparse: true, // Allows multiple null values, but unique non-null values
+  unique: true,
+  validate: {
+    validator: function(v) {
+      // Allow empty/null GST numbers
+      if (!v || v === '') return true;
+      return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
+    },
+    message: 'Please provide a valid GST number'
+  }
+},
   companyName: {
     type: String,
     required: [true, 'Company name is required'],
