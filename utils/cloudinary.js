@@ -4,11 +4,24 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { ErrorHandler } = require('./errorHandler');
 
 // Configure Cloudinary
+// Add configuration validation at the top after the config:
+
+// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+// Validate configuration
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.error('❌ Cloudinary configuration missing! Please check environment variables:');
+  console.error('- CLOUDINARY_CLOUD_NAME');
+  console.error('- CLOUDINARY_API_KEY'); 
+  console.error('- CLOUDINARY_API_SECRET');
+} else {
+  console.log('✅ Cloudinary configured successfully');
+}
 
 // Configure multer storage for Cloudinary
 const storage = new CloudinaryStorage({
