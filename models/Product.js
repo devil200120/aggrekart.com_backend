@@ -222,10 +222,51 @@ productSchema.index({
 });
 
 // Generate unique product ID
+// Replace the existing pre-save middleware (around line 219-225) with this:
+
+// Generate unique product ID - FIXED VERSION
 productSchema.pre('save', async function(next) {
   if (!this.productId) {
-    const count = await mongoose.models.Product.countDocuments();
-    this.productId = `PRD${String(count + 1).padStart(6, '0')}`;
+    try {
+      // Use a more robust method to generate unique IDs
+      let isUnique = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (!isUnique && attempts < maxAttempts) {
+        // Generate a random number component to avoid duplicates
+        const randomComponent = Math.floor(Math.random() * 1000);
+        const timestamp = Date.now().toString().slice(-4);
+        const count = await mongoose.models.Product.countDocuments();
+        
+        // Combine multiple factors for uniqueness
+        const idNumber = count + 1 + randomComponent;
+        const candidateId = `PRD${String(idNumber).padStart(6, '0')}${timestamp.slice(-2)}`;
+        
+        // Check if this ID already exists
+        const existingProduct = await mongoose.models.Product.findOne({ productId: candidateId });
+        
+        if (!existingProduct) {
+          this.productId = candidateId;
+          isUnique = true;
+        }
+        
+        attempts++;
+      }
+      
+      // Fallback: use UUID-like approach if all attempts failed
+      if (!isUnique) {
+        const uuid = require('crypto').randomBytes(4).toString('hex').toUpperCase();
+        this.productId = `PRD${uuid}`;
+      }
+      
+      console.log('✅ Generated productId:', this.productId);
+      
+    } catch (error) {
+      console.error('❌ ProductId generation error:', error);
+      // Fallback to timestamp-based ID
+      this.productId = `PRD${Date.now()}`;
+    }
   }
   next();
 });
@@ -285,8 +326,19 @@ productSchema.methods.calculateFinalPrice = function(quantity = 1, distance = 0)
 
 // Check if product is in stock
 productSchema.methods.isInStock = function(quantity = 1) {
-  const availableStock = this.stock.available - this.stock.reserved;
-  return availableStock >= quantity;
+  // Fix: Ensure we never have negative available stock
+  const available = Math.max(0, this.stock.available || 0);
+  const reserved = Math.max(0, this.stock.reserved || 0);
+  
+  // Calculate actual available stock (never negative)
+  const actualAvailable = Math.max(0, available - reserved);
+  
+  return actualAvailable >= quantity;
+};
+productSchema.methods.getAvailableStock = function() {
+  const available = Math.max(0, this.stock.available || 0);
+  const reserved = Math.max(0, this.stock.reserved || 0);
+  return Math.max(0, available - reserved);
 };
 
 // Static method to get products by category
@@ -341,5 +393,30 @@ productSchema.statics.searchProducts = function(query, options = {}) {
     .skip(skip)
     .limit(limit);
 };
+// Add these methods before module.exports (around line 390):
+
+// Method to get display price
+productSchema.methods.getDisplayPrice = function() {
+  return this.pricing?.basePrice || 0;
+};
+
+// Method to get price with GST
+productSchema.methods.getPriceWithGST = function() {
+  const basePrice = this.pricing?.basePrice || 0;
+  if (this.pricing?.includesGST) {
+    return basePrice;
+  }
+  const gstRate = this.pricing?.gstRate || 18;
+  return basePrice * (1 + gstRate / 100);
+};
+
+// Virtual for frontend compatibility
+productSchema.virtual('price').get(function() {
+  return this.pricing?.basePrice || 0;
+});
+
+// Ensure virtual fields are serialized
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Product', productSchema);
