@@ -327,26 +327,85 @@ router.put('/preferences', auth, [
 // @route   GET /api/users/dashboard
 // @desc    Get user dashboard data
 // @access  Private
+// Replace the existing dashboard route with this enhanced version
+
+// @route   GET /api/users/dashboard
+// @desc    Get user dashboard data with analytics
+// @access  Private
 router.get('/dashboard', auth, async (req, res, next) => {
   try {
+    const { timeRange = 'all' } = req.query;
+    
     const user = await User.findById(req.user._id).select('-password');
     
-    // Get recent orders (placeholder for now)
-    const recentOrders = [];
+    // Get actual orders from database
+    const Order = require('../models/Order');
+    
+    let orderFilter = { customer: req.user._id };
+    
+    // Add time range filter
+    if (timeRange !== 'all') {
+      const now = new Date();
+      let startDate;
+      
+      switch (timeRange) {
+        case '1month':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          break;
+        case '3months':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+          break;
+        case '6months':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+          break;
+        case '1year':
+          startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+          break;
+        default:
+          startDate = null;
+      }
+      
+      if (startDate) {
+        orderFilter.createdAt = { $gte: startDate };
+      }
+    }
+
+    // Get recent orders
+    const recentOrders = await Order.find(orderFilter)
+      .populate('supplier', 'name businessName')
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Calculate real statistics
+    const allOrders = await Order.find(orderFilter);
+    const totalSpent = allOrders.reduce((sum, order) => sum + (order.pricing?.totalAmount || 0), 0);
+    const completedOrders = allOrders.filter(order => order.status === 'delivered');
+    const activeOrders = allOrders.filter(order => !['delivered', 'cancelled'].includes(order.status));
+    
+    // Update user model with real data (optional)
+    if (timeRange === 'all') {
+      user.orderCount = allOrders.length;
+      user.totalOrderValue = totalSpent;
+      await user.save();
+    }
     
     // Calculate membership progress
     let nextTierRequirement = null;
     if (user.membershipTier === 'silver') {
       nextTierRequirement = {
         tier: 'gold',
-        ordersNeeded: Math.max(0, 20 - user.orderCount),
-        currentOrders: user.orderCount
+        ordersNeeded: Math.max(0, 20 - allOrders.length),
+        spendingNeeded: Math.max(0, 50000 - totalSpent),
+        currentOrders: allOrders.length,
+        currentSpending: totalSpent
       };
     } else if (user.membershipTier === 'gold') {
       nextTierRequirement = {
         tier: 'platinum',
-        ordersNeeded: Math.max(0, 50 - user.orderCount),
-        currentOrders: user.orderCount
+        ordersNeeded: Math.max(0, 50 - allOrders.length),
+        spendingNeeded: Math.max(0, 200000 - totalSpent),
+        currentOrders: allOrders.length,
+        currentSpending: totalSpent
       };
     }
     
@@ -359,20 +418,28 @@ router.get('/dashboard', auth, async (req, res, next) => {
         profileCompletionPercentage: user.getProfileCompletionPercentage()
       },
       stats: {
-        totalOrders: user.orderCount,
-        totalSpent: user.totalOrderValue,
-        activeOrders: 0, // Will be calculated when order system is implemented
-        completedOrders: user.orderCount
+        totalOrders: allOrders.length,
+        totalSpent: totalSpent,
+        activeOrders: activeOrders.length,
+        completedOrders: completedOrders.length,
+        averageOrderValue: allOrders.length > 0 ? totalSpent / allOrders.length : 0
       },
       membership: {
         current: user.membershipTier,
         nextTier: nextTierRequirement,
         benefits: user.membershipBenefits
       },
-      recentOrders,
+      recentOrders: recentOrders.map(order => ({
+        orderId: order.orderId,
+        totalAmount: order.pricing?.totalAmount || 0,
+        status: order.status,
+        createdAt: order.createdAt,
+        supplier: order.supplier?.businessName || order.supplier?.name
+      })),
       notifications: {
         unread: 0 // Placeholder
-      }
+      },
+      timeRange
     };
     
     res.json({
@@ -380,10 +447,10 @@ router.get('/dashboard', auth, async (req, res, next) => {
       data: dashboardData
     });
   } catch (error) {
+    console.error('Dashboard error:', error);
     next(error);
   }
 });
-
 // @route   POST /api/users/deactivate
 // @desc    Deactivate user account
 // @access  Private
