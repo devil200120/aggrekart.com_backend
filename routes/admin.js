@@ -766,5 +766,338 @@ router.get('/analytics/suppliers', auth, authorize('admin'), [
     next(error);
   }
 });
+// Add these routes before the final module.exports = router; line
+
+// @route   GET /api/admin/users
+// @desc    Get all users with filters
+// @access  Private (Admin)
+router.get('/users', auth, authorize('admin'), [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
+  query('role').optional().isIn(['all', 'customer', 'supplier', 'admin']).withMessage('Invalid role'),
+  query('status').optional().isIn(['all', 'active', 'inactive', 'verified', 'unverified']).withMessage('Invalid status'),
+  query('search').optional().trim().isLength({ min: 2 }).withMessage('Search query must be at least 2 characters')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { 
+      page = 1, 
+      limit = 10, 
+      role = 'all', 
+      status = 'all', 
+      search 
+    } = req.query;
+
+    // Build filter
+    let filter = {};
+    
+    if (role !== 'all') {
+      filter.role = role;
+    }
+
+    switch (status) {
+      case 'active':
+        filter.isActive = true;
+        break;
+      case 'inactive':
+        filter.isActive = false;
+        break;
+      case 'verified':
+        filter.phoneVerified = true;
+        break;
+      case 'unverified':
+        filter.phoneVerified = false;
+        break;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { phoneNumber: searchRegex },
+        { customerId: searchRegex }
+      ];
+    }
+
+    const users = await User.find(filter)
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments(filter);
+
+    // Get user statistics
+    const usersWithStats = await Promise.all(
+      users.map(async (user) => {
+        const userObj = user.toObject();
+        
+        if (user.role === 'customer') {
+          // Get order statistics for customers
+          const orderStats = await Order.aggregate([
+            { $match: { customer: user._id } },
+            {
+              $group: {
+                _id: null,
+                totalOrders: { $sum: 1 },
+                totalSpent: { $sum: '$pricing.totalAmount' },
+                completedOrders: {
+                  $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
+                }
+              }
+            }
+          ]);
+
+          userObj.stats = orderStats[0] || {
+            totalOrders: 0,
+            totalSpent: 0,
+            completedOrders: 0
+          };
+        } else if (user.role === 'supplier') {
+          // Get supplier statistics
+          const supplier = await Supplier.findOne({ user: user._id });
+          userObj.supplierInfo = supplier ? {
+            supplierId: supplier.supplierId,
+            companyName: supplier.companyName,
+            isApproved: supplier.isApproved,
+            isActive: supplier.isActive
+          } : null;
+        }
+
+        return userObj;
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        users: usersWithStats,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalItems: total,
+          itemsPerPage: parseInt(limit)
+        },
+        filters: { role, status, search }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/orders
+// @desc    Get all orders with filters for admin
+// @access  Private (Admin)
+router.get('/orders', auth, authorize('admin'), [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
+  query('status').optional().isIn(['all', 'pending', 'confirmed', 'shipped', 'delivered', 'cancelled']).withMessage('Invalid status'),
+  query('search').optional().trim().isLength({ min: 2 }).withMessage('Search query must be at least 2 characters'),
+  query('supplier').optional().isMongoId().withMessage('Invalid supplier ID'),
+  query('customer').optional().isMongoId().withMessage('Invalid customer ID'),
+  query('dateFrom').optional().isISO8601().withMessage('Invalid date format'),
+  query('dateTo').optional().isISO8601().withMessage('Invalid date format')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { 
+      page = 1, 
+      limit = 10, 
+      status = 'all', 
+      search,
+      supplier,
+      customer,
+      dateFrom,
+      dateTo
+    } = req.query;
+
+    // Build filter
+    let filter = {};
+    
+    if (status !== 'all') {
+      filter.status = status;
+    }
+
+    if (supplier) {
+      filter.supplier = supplier;
+    }
+
+    if (customer) {
+      filter.customer = customer;
+    }
+
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let orders;
+    let total;
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filter.$or = [
+        { orderId: searchRegex }
+      ];
+    }
+
+    orders = await Order.find(filter)
+      .populate('customer', 'name email phoneNumber customerId')
+      .populate('supplier', 'companyName supplierId contactPersonName')
+      .populate('items.product', 'name category')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    total = await Order.countDocuments(filter);
+
+    // Calculate summary statistics
+    const orderStats = await Order.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalValue: { $sum: '$pricing.totalAmount' },
+          totalCommission: { $sum: '$pricing.commission' },
+          averageOrderValue: { $avg: '$pricing.totalAmount' }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        orders,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalItems: total,
+          itemsPerPage: parseInt(limit)
+        },
+        summary: orderStats[0] || {
+          totalValue: 0,
+          totalCommission: 0,
+          averageOrderValue: 0
+        },
+        filters: { status, search, supplier, customer, dateFrom, dateTo }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/users/:userId
+// @desc    Get detailed user information
+// @access  Private (Admin)
+router.get('/users/:userId', auth, authorize('admin'), [
+  param('userId').isMongoId().withMessage('Valid user ID is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select('-password');
+    if (!user) {
+      return next(new ErrorHandler('User not found', 404));
+    }
+
+    let userDetails = user.toObject();
+
+    // Get role-specific information
+    if (user.role === 'customer') {
+      // Get customer orders and statistics
+      const orders = await Order.find({ customer: user._id })
+        .populate('supplier', 'companyName')
+        .select('orderId status pricing createdAt')
+        .sort({ createdAt: -1 })
+        .limit(10);
+
+      const orderStats = await Order.aggregate([
+        { $match: { customer: user._id } },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalSpent: { $sum: '$pricing.totalAmount' },
+            completedOrders: {
+              $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] }
+            },
+            cancelledOrders: {
+              $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
+            }
+          }
+        }
+      ]);
+
+      userDetails.customerData = {
+        recentOrders: orders,
+        statistics: orderStats[0] || {
+          totalOrders: 0,
+          totalSpent: 0,
+          completedOrders: 0,
+          cancelledOrders: 0
+        }
+      };
+
+    } else if (user.role === 'supplier') {
+      // Get supplier information
+      const supplier = await Supplier.findOne({ user: user._id });
+      if (supplier) {
+        const supplierProducts = await Product.find({ supplier: supplier._id })
+          .select('name category isActive isApproved createdAt')
+          .sort({ createdAt: -1 })
+          .limit(10);
+
+        userDetails.supplierData = {
+          supplierInfo: supplier,
+          recentProducts: supplierProducts
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { user: userDetails }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 module.exports = router;
