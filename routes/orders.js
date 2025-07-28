@@ -635,5 +635,129 @@ router.put('/:orderId/modify', auth, authorize('customer'), [
     next(error);
   }
 });
+// ...existing code...
+
+// Add this route before the last export statement
+
+// @route   GET /api/orders/history
+// @desc    Get order history with analytics data
+// @access  Private (Customer)
+router.get('/history', auth, authorize('customer'), [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('analytics').optional().isBoolean().withMessage('Analytics must be boolean'),
+  query('timeRange').optional().isIn(['1month', '3months', '6months', '1year', 'all']).withMessage('Invalid time range')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { page = 1, limit = 50, analytics = false, timeRange = 'all' } = req.query;
+
+    const filter = { customer: req.user._id };
+
+    // Add time range filter
+    if (timeRange !== 'all') {
+      const now = new Date();
+      let startDate;
+      
+      switch (timeRange) {
+        case '1month':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          break;
+        case '3months':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+          break;
+        case '6months':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+          break;
+        case '1year':
+          startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+          break;
+        default:
+          startDate = null;
+      }
+      
+      if (startDate) {
+        filter.createdAt = { $gte: startDate };
+      }
+    }
+
+    const orders = await Order.find(filter)
+      .populate('supplier', 'name businessName')
+      .populate('items.product', 'name category subcategory')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit) * parseInt(page))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const total = await Order.countDocuments(filter);
+
+    // If analytics requested, add summary data
+    let analyticsData = null;
+    if (analytics || analytics === 'true') {
+      const allOrdersForAnalytics = await Order.find(filter)
+        .populate('items.product', 'name category subcategory');
+
+      const totalSpent = allOrdersForAnalytics.reduce((sum, order) => sum + (order.pricing?.totalAmount || 0), 0);
+      const completedOrders = allOrdersForAnalytics.filter(order => order.status === 'delivered');
+      const averageOrderValue = allOrdersForAnalytics.length > 0 ? totalSpent / allOrdersForAnalytics.length : 0;
+
+      // Monthly spending
+      const monthlySpending = {};
+      allOrdersForAnalytics.forEach(order => {
+        const month = new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        monthlySpending[month] = (monthlySpending[month] || 0) + (order.pricing?.totalAmount || 0);
+      });
+
+      // Top categories
+      const categorySpending = {};
+      allOrdersForAnalytics.forEach(order => {
+        order.items?.forEach(item => {
+          const category = item.product?.category || item.productSnapshot?.category || 'Other';
+          categorySpending[category] = (categorySpending[category] || 0) + (item.totalPrice || 0);
+        });
+      });
+
+      const topCategories = Object.entries(categorySpending)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .map(([name, amount]) => ({ name, amount }));
+
+      analyticsData = {
+        totalOrders: allOrdersForAnalytics.length,
+        totalSpent,
+        averageOrderValue,
+        completedOrders: completedOrders.length,
+        monthlySpending,
+        topCategories,
+        timeRange
+      };
+    }
+
+    res.json({
+      success: true,
+      data: {
+        orders,
+        analytics: analyticsData,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalItems: total,
+          itemsPerPage: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 module.exports = router;
