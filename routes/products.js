@@ -4,7 +4,7 @@ const { auth, authorize, optionalAuth } = require('../middleware/auth');
 const Product = require('../models/Product');
 const Supplier = require('../models/Supplier');
 const { ErrorHandler } = require('../utils/errorHandler');
-const { uploadImages } = require('../utils/cloudinary');
+const { uploadProductImages, deleteImage, getOptimizedImageUrl } = require('../utils/cloudinary');
 const router = express.Router();
 // Add this import at the top with other imports (around line 6):
 
@@ -504,30 +504,39 @@ router.put('/:productId', auth, authorize('supplier'), [
     }
 
     // Update allowed fields
-    const allowedUpdates = [
-      'name', 'description', 'brand', 'specifications', 'deliveryTime', 'tags'
-    ];
-    
-    const pricingUpdates = ['basePrice', 'minimumQuantity', 'includesGST', 'gstRate'];
-    const stockUpdates = ['available', 'lowStockThreshold'];
+    // Update the PUT route (around lines 507-530) to include isActive:
 
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        product[field] = req.body[field];
-      }
-    });
+// Update allowed fields
+const allowedUpdates = [
+  'name', 'description', 'brand', 'specifications', 'deliveryTime', 'tags', 'isActive'
+];
 
-    pricingUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        product.pricing[field] = req.body[field];
-      }
-    });
+const pricingUpdates = ['basePrice', 'minimumQuantity', 'includesGST', 'gstRate'];
+const stockUpdates = ['available', 'lowStockThreshold'];
 
-    stockUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        product.stock[field] = req.body[field];
-      }
-    });
+allowedUpdates.forEach(field => {
+  if (req.body[field] !== undefined) {
+    product[field] = req.body[field];
+  }
+});
+
+pricingUpdates.forEach(field => {
+  if (req.body[field] !== undefined) {
+    product.pricing[field] = req.body[field];
+  }
+});
+
+stockUpdates.forEach(field => {
+  if (req.body[field] !== undefined) {
+    product.stock[field] = req.body[field];
+  }
+});
+
+// Handle isActive field specifically with logging
+if (req.body.isActive !== undefined) {
+  console.log(`🔄 Updating product ${product.name} isActive from ${product.isActive} to ${req.body.isActive}`);
+  product.isActive = req.body.isActive;
+}
 
     // If major changes, require re-approval
     const majorChanges = ['name', 'description', 'basePrice', 'category', 'subcategory'];
@@ -555,15 +564,24 @@ router.put('/:productId', auth, authorize('supplier'), [
 // @route   POST /api/products/:productId/images
 // @desc    Upload product images
 // @access  Private (Supplier)
+// Fix the image upload route (around line 558-610):
+
+// @route   POST /api/products/:productId/images
+// @desc    Upload product images
+// @access  Private (Supplier)
 router.post('/:productId/images', auth, authorize('supplier'), async (req, res, next) => {
   // Use the upload middleware
   uploadProductImages(req, res, async (err) => {
     if (err) {
+      console.error('Upload middleware error:', err);
       return next(err);
     }
 
     try {
       const { productId } = req.params;
+      
+      console.log('📷 Image upload request for product:', productId);
+      console.log('📁 Files received:', req.files?.length || 0);
       
       // Find supplier
       const supplier = await Supplier.findOne({ user: req.user._id });
@@ -585,16 +603,28 @@ router.post('/:productId/images', auth, authorize('supplier'), async (req, res, 
         return next(new ErrorHandler('No images uploaded', 400));
       }
 
+      console.log('✅ Processing uploaded files...');
+
       // Process uploaded images
-      const newImages = req.files.map((file, index) => ({
-        url: file.path,
-        cloudinaryId: file.filename,
-        alt: `${product.name} - Image ${product.images.length + index + 1}`,
-        isPrimary: product.images.length === 0 && index === 0 // First image of first upload is primary
-      }));
+      const newImages = req.files.map((file, index) => {
+        console.log(`📸 Processing image ${index + 1}:`, {
+          filename: file.filename,
+          path: file.path,
+          size: file.size
+        });
+        
+        return {
+          url: file.path,
+          cloudinaryId: file.filename,
+          alt: `${product.name} - Image ${product.images.length + index + 1}`,
+          isPrimary: product.images.length === 0 && index === 0 // First image of first upload is primary
+        };
+      });
 
       product.images.push(...newImages);
       await product.save();
+
+      console.log('🎉 Images saved successfully:', newImages.length);
 
       res.json({
         success: true,
@@ -606,11 +636,11 @@ router.post('/:productId/images', auth, authorize('supplier'), async (req, res, 
       });
 
     } catch (error) {
+      console.error('💥 Image processing error:', error);
       next(error);
     }
   });
 });
-
 // @route   DELETE /api/products/:productId/images/:imageId
 // @desc    Delete product image
 // @access  Private (Supplier)
@@ -889,27 +919,34 @@ router.get('/supplier/my-products', auth, authorize('supplier'), [
     console.log('🔍 Base filter:', filter);
     
     // Handle status filter - BE MORE FLEXIBLE
-    if (status && status !== 'all' && status.trim() !== '') {
-      console.log('📊 Applying status filter:', status.trim());
-      switch (status.trim()) {
-        case 'active':
-          filter.isActive = true;
-          filter.isApproved = true;
-          break;
-        case 'inactive':
-          filter.isActive = false;
-          break;
-        case 'pending':
-          filter.isApproved = false;
-          break;
-        case 'approved':
-          filter.isApproved = true;
-          break;
-        default:
-          // Don't add any status filter for unknown status
-          break;
-      }
-    }
+    // Replace lines 907-926 with this:
+
+// Handle status filter - IMPROVED
+if (status && status !== 'all' && status.trim() !== '') {
+  console.log('📊 Applying status filter:', status.trim());
+  switch (status.trim()) {
+    case 'active':
+      filter.isActive = true;
+      filter.isApproved = true;
+      break;
+    case 'inactive':
+      filter.isActive = false;
+      break;
+    case 'pending':
+      filter.isApproved = false;
+      break;
+    case 'approved':
+      filter.isApproved = true;
+      break;
+    default:
+      // For 'all' and unknown status, show only active products
+      filter.isActive = true;
+      break;
+  }
+} else {
+  // Default behavior: show only active products (hide soft-deleted ones)
+  filter.isActive = true;
+}
 
     // Handle search filter
     if (search && search.trim() !== '') {
