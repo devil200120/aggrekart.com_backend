@@ -62,7 +62,7 @@ const corsOptions = {
     'User-Agent', // Important for mobile
    
   ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  exposedHeaders: ['Content-Range'],
   optionsSuccessStatus: 200, // Support legacy browsers
   maxAge: 86400 // Cache preflight for 24 hours
 };
