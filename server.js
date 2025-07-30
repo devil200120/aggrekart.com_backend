@@ -4,117 +4,107 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const { globalErrorHandler } = require('./utils/errorHandler');
+const path = require('path');
 const os = require('os');
 require('dotenv').config();
 
+const { globalErrorHandler } = require('./utils/errorHandler');
+
 const app = express();
 
-// Security middleware - UPDATED FOR LOCAL NETWORK
-app.use(helmet({
-  crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-      connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
-      fontSrc: ["'self'", "data:", "https:"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'self'"]
+// --- Helmet security middleware with adjusted CSP ---
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false, // necessary if you serve fonts or cross-origin scripts
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
+        fontSrc: ["'self'", "data:", "https:"],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'self'"],
+      },
     },
-  },
-}));
+  })
+);
 
-// CORS configuration - UPDATED FOR LOCAL NETWORK ACCESS
+// --- CORS setup ---
+const allowedOrigins = [
+  'https://aggrekart-com.onrender.com',
+  process.env.FRONTEND_URL, // Ensure set in env vars, like https://aggrekart-com.onrender.com
+].filter(Boolean);
+
 const corsOptions = {
   origin: function (origin, callback) {
     console.log('🌐 Incoming request from origin:', origin);
     
-    // ALWAYS allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (Postman, curl, mobile apps, same-origin)
     if (!origin) {
       console.log('✅ No origin - allowing request');
       return callback(null, true);
     }
     
-    // For development mode - allow EVERYTHING
+    // Allow all origins during development
     if (process.env.NODE_ENV !== 'production') {
       console.log('✅ Development mode - allowing all origins');
       return callback(null, true);
     }
     
-    // Production whitelist (only when NODE_ENV is production)
-    const productionOrigins = [
-      'https://aggrekart-com.onrender.com',
-      'https://aggrekart-com.onrender.com/',
-      process.env.FRONTEND_URL
-    ].filter(Boolean);
-    
-    if (productionOrigins.includes(origin)) {
+    // In production, allow only whitelisted origins
+    if (allowedOrigins.includes(origin)) {
       console.log('✅ Production origin allowed:', origin);
       return callback(null, true);
     }
     
-    // If we reach here in production, block it
     console.log('❌ Production origin blocked:', origin);
     callback(new Error(`Not allowed by CORS in production. Origin: ${origin}`));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH','HEAD'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With',
-    'Accept',
-    'Origin',
-    'Cache-Control',
-    'Pragma',
-    'User-Agent',
-    'Referer',
-    'X-CSRF-Token',
-    'X-Forwarded-For',
-    'X-Real-IP'
+    'Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin',
+    'Cache-Control', 'Pragma', 'User-Agent', 'Referer', 'X-CSRF-Token',
+    'X-Forwarded-For', 'X-Real-IP'
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range', 'set-cookie'],
   optionsSuccessStatus: 200,
   preflightContinue: false
 };
-app.use(cors(corsOptions));
 
+app.use(cors(corsOptions));
 // Handle preflight requests explicitly for all routes
 app.options('*', cors(corsOptions));
 
-// Rate limiting - More lenient for production cold starts
+// --- Rate limiting ---
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 200 : 1000, // More requests for production
+  windowMs: 15 * 60 * 1000, // 15 mins
+  max: process.env.NODE_ENV === 'development' ? 200 : 1000,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/api/health' || req.path === '/health';
-  }
+  skip: req => ['/api/health', '/health'].includes(req.path)
 });
 app.use('/api/', limiter);
 
-// Body parsing middleware
+// --- Body parsers ---
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
+// --- Logging ---
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 } else {
   app.use(morgan('dev'));
 }
 
-// Database connection
+// --- MongoDB connection ---
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aggrekart', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -128,7 +118,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aggrekart
   process.exit(1);
 });
 
-// Health check endpoint (before other routes)
+// --- Health check endpoints ---
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -139,41 +129,35 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     success: true,
-    status: 'OK', 
+    status: 'OK',
     message: 'Aggrekart API is running',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
     cors: {
-      allowedOrigins: [
-        'https://aggrekart-com.onrender.com',
-        'http://localhost:3000',
-        process.env.FRONTEND_URL
-      ].filter(Boolean)
+      allowedOrigins
     },
     features: [
       'User Authentication',
-      'Product Management', 
+      'Product Management',
       'Order Management',
       'Supplier Management',
       'Admin Panel',
       'Payment Integration',
       'Supplier Onboarding'
-    ]
+    ],
   });
 });
 
-// CORS test endpoint for debugging
+// --- CORS test endpoint ---
 app.get('/api/test-cors', (req, res) => {
   res.json({
     success: true,
     message: 'CORS is working!',
     origin: req.headers.origin,
-    userAgent: req.headers['user-agent'],
     timestamp: new Date().toISOString(),
     requestHeaders: {
       origin: req.headers.origin,
@@ -183,7 +167,7 @@ app.get('/api/test-cors', (req, res) => {
   });
 });
 
-// API Routes
+// --- API routes ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/products', require('./routes/products'));
@@ -199,7 +183,7 @@ app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
 
-// Root endpoint
+// --- Root endpoint ---
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -224,85 +208,65 @@ app.get('/', (req, res) => {
   });
 });
 
-// Serve static files in production (if you have a build folder)
-if (process.env.NODE_ENV === 'development') {
-  
-  const path = require('path');
-  
-  // Check if build directory exists
-  try {
-    app.use(express.static(path.join(__dirname, 'front-end/app/dist')));
-    
-    // Catch all handler for React Router (only for non-API routes)
-    app.get('*', (req, res, next) => {
-      // Skip API routes
-      if (req.path.startsWith('/api/') || req.path === '/health') {
-        return next();
-      }
-      
-      res.sendFile(path.join(__dirname, 'front-end/app/dist', 'index.html'));
-    });
-  } catch (error) {
-    console.log('No build folder found, serving API only');
-  }
+// --- Serve React build in production ---
+if (process.env.NODE_ENV === 'production') {
+  const buildPath = path.join(__dirname, 'front-end/app/dist'); // Adjust if your build folder path differs
+  app.use(express.static(buildPath));
+
+  // Catch-all handler for client-side routing (except API and health)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path === '/health') {
+      return next();
+    }
+    res.sendFile(path.join(buildPath, 'index.html'));
+  });
 }
 
-// Global error handling middleware
-app.use(globalErrorHandler);
-
-// 404 handler for API routes
+// --- 404 handlers ---
 app.use('/api/*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     message: `API route ${req.originalUrl} not found`,
-    availableRoutes: [
-      '/api/auth',
-      '/api/users',
-      '/api/products',
-      '/api/cart',
-      '/api/orders',
-      '/api/payments',
-      '/api/suppliers',
-      '/api/admin'
-    ]
+    suggestion: 'Try /api/health for API status'
   });
 });
 
-// 404 handler for all other routes
 app.use('*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found`,
     suggestion: 'Try /api/health for API status'
   });
 });
 
-const PORT = process.env.PORT || 5000;
+// --- Global error handler ---
+app.use(globalErrorHandler);
 
-// Get local IP address for network access
+// --- Helper: get local IP for console logs ---
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
-    for (const interface of interfaces[name]) {
-      if (interface.family === 'IPv4' && !interface.internal) {
-        return interface.address;
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
       }
     }
   }
   return 'localhost';
 }
 
+const PORT = process.env.PORT || 5000;
 const localIP = getLocalIpAddress();
 
-// Create server and store reference for graceful shutdown
-const server = app.listen(PORT,  () => {
+// --- Start server ---
+const server = app.listen(PORT, () => {
   console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 Local: http://localhost:${PORT}`);
   console.log(`🌐 Network: http://${localIP}:${PORT}`);
   console.log(`📱 Mobile Access: http://${localIP}:${PORT}/api/health`);
   console.log(`🧪 CORS Test: http://${localIP}:${PORT}/api/test-cors`);
-  console.log(`📋 Available endpoints:`);
+  console.log('📋 Available endpoints:');
   console.log(`   Authentication: http://${localIP}:${PORT}/api/auth`);
   console.log(`   Products: http://${localIP}:${PORT}/api/products`);
   console.log(`   Orders: http://${localIP}:${PORT}/api/orders`);
@@ -312,23 +276,17 @@ const server = app.listen(PORT,  () => {
   console.log(`🔗 Frontend should connect to: http://${localIP}:${PORT}/api`);
 });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  console.log('💥 Unhandled Promise Rejection:', err.message);
+// --- Graceful shutdown & error handling ---
+process.on('unhandledRejection', (err) => {
+  console.error('💥 Unhandled Promise Rejection:', err.message || err);
   console.log('Shutting down server...');
-  server.close(() => {
-    process.exit(1);
-  });
+  server.close(() => process.exit(1));
 });
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  console.log('💥 Uncaught Exception:', err.message);
+  console.error('💥 Uncaught Exception:', err.message || err);
   console.log('Shutting down server...');
   process.exit(1);
 });
-
-// Graceful shutdown
-
 
 module.exports = app;
