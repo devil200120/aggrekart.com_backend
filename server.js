@@ -54,13 +54,13 @@ const corsOptions = {
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
-    'X-Requested-With',
+    
     'Accept',
     'Origin',
     'Cache-Control',
     'Pragma',
     'User-Agent', // Important for mobile
-    'X-Mobile-App'
+   
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   optionsSuccessStatus: 200, // Support legacy browsers
