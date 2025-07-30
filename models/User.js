@@ -118,11 +118,24 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: false // Changed to false - activated after phone verification
+  },suspendedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  suspendedAt: {
+    type: Date,
+    default: null
+  },
+  suspensionReason: {
+    type: String,
+    default: null
   },
   lastLogin: {
     type: Date,
     default: Date.now
   },
+  
   // Password reset
   resetPasswordToken: String,
   resetPasswordExpire: Date,
@@ -403,6 +416,21 @@ userSchema.methods.toJSON = function() {
   delete userObject.phoneVerificationOTP;
   delete userObject.phoneOTPExpire;
   return userObject;
+};
+// Static method to find user by phone for login
+userSchema.statics.findByPhone = function(phoneNumber) {
+  return this.findOne({ phoneNumber }).select('+password');
+};
+
+// Static method to support phone + password login
+userSchema.statics.findByPhoneAndValidatePassword = async function(phoneNumber, password) {
+  const user = await this.findByPhone(phoneNumber);
+  if (!user) return null;
+  
+  const isPasswordValid = await user.comparePassword(password);
+  if (!isPasswordValid) return null;
+  
+  return user;
 };
 
 module.exports = mongoose.model('User', userSchema);
