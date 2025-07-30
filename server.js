@@ -5,66 +5,96 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const { globalErrorHandler } = require('./utils/errorHandler');
+const os = require('os');
 require('dotenv').config();
 
 const app = express();
 
-// Security middleware
+// Security middleware - UPDATED FOR LOCAL NETWORK
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https:"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:", "http:"],
+      connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
+      fontSrc: ["'self'", "data:", "https:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'self'"]
     },
   },
 }));
 
-// CORS configuration - FIXED FOR YOUR DEPLOYMENT
+// CORS configuration - UPDATED FOR LOCAL NETWORK ACCESS
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
-      'https://aggrekart-com.onrender.com',           // Your frontend URL
-      'https://aggrekart-com.onrender.com/',         // With trailing slash
-      'http://localhost:3000',                       // Development
-      'http://localhost:5173',                       // Vite dev server
-      'http://127.0.0.1:3000',                      // Alternative localhost
-      process.env.FRONTEND_URL                       // Environment variable
-    ].filter(Boolean); // Remove undefined values
+      // Production URLs
+      'https://aggrekart-com.onrender.com',
+      'https://aggrekart-com.onrender.com/',
+      
+      // Local development
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+    
+    // Local network patterns (for mobile devices and other computers)
+    const localNetworkPatterns = [
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/,  // 192.168.x.x:3000
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/,   // 10.x.x.x:3000
+      /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}:3000$/, // 172.16-31.x.x:3000
+      /^http:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/ // Any IP:3000 (for local testing)
+    ];
     
     console.log('🌐 Request from origin:', origin);
-    console.log('✅ Allowed origins:', allowedOrigins);
     
+    // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS allowed for:', origin);
-      callback(null, true);
-    } else {
-      console.log('❌ CORS blocked origin:', origin);
-      callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+      console.log('✅ CORS allowed (whitelist):', origin);
+      return callback(null, true);
     }
+    
+    // Check if origin matches local network patterns
+    const isLocalNetwork = localNetworkPatterns.some(pattern => pattern.test(origin));
+    if (isLocalNetwork) {
+      console.log('✅ CORS allowed (local network):', origin);
+      return callback(null, true);
+    }
+    
+    // For development, be more permissive
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ CORS allowed (development mode):', origin);
+      return callback(null, true);
+    }
+    
+    console.log('❌ CORS blocked origin:', origin);
+    console.log('📋 Allowed origins:', allowedOrigins);
+    callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
-    
+    'X-Requested-With',
     'Accept',
     'Origin',
     'Cache-Control',
     'Pragma',
-    'User-Agent', // Important for mobile
-   
+    'User-Agent',
+    'Referer'
   ],
-  exposedHeaders: ['Content-Range'],
-  optionsSuccessStatus: 200, // Support legacy browsers
-  maxAge: 86400 // Cache preflight for 24 hours
+  exposedHeaders: ['Content-Range', 'set-cookie'],
+  optionsSuccessStatus: 200,
+  maxAge: 86400
 };
 
 app.use(cors(corsOptions));
@@ -133,7 +163,7 @@ app.get('/api/health', (req, res) => {
     message: 'Aggrekart API is running',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment:'development',
+    environment: process.env.NODE_ENV || 'development',
     cors: {
       allowedOrigins: [
         'https://aggrekart-com.onrender.com',
@@ -193,7 +223,7 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     documentation: '/api/health',
     cors_test: '/api/test-cors',
-    environment: 'development',
+    environment: process.env.NODE_ENV || 'development',
     endpoints: {
       auth: '/api/auth',
       users: '/api/users',
@@ -211,12 +241,12 @@ app.get('/', (req, res) => {
 });
 
 // Serve static files in production (if you have a build folder)
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === 'production') {
   const path = require('path');
   
   // Check if build directory exists
   try {
-    app.use(express.static(path.join(__dirname, 'build')));
+    app.use(express.static(path.join(__dirname, 'front-end/app/dist')));
     
     // Catch all handler for React Router (only for non-API routes)
     app.get('*', (req, res, next) => {
@@ -225,7 +255,7 @@ if (process.env.NODE_ENV === 'development') {
         return next();
       }
       
-      res.sendFile(path.join(__dirname, 'build', 'index.html'));
+      res.sendFile(path.join(__dirname, 'front-end/app/dist', 'index.html'));
     });
   } catch (error) {
     console.log('No build folder found, serving API only');
@@ -264,20 +294,37 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
+// Get local IP address for network access
+function getLocalIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const interface of interfaces[name]) {
+      if (interface.family === 'IPv4' && !interface.internal) {
+        return interface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+const localIP = getLocalIpAddress();
+
 // Create server and store reference for graceful shutdown
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
-  console.log(`🧪 CORS Test: http://localhost:${PORT}/api/test-cors`);
+  console.log(`📡 Local: http://localhost:${PORT}`);
+  console.log(`🌐 Network: http://${localIP}:${PORT}`);
+  console.log(`📱 Mobile Access: http://${localIP}:${PORT}/api/health`);
+  console.log(`🧪 CORS Test: http://${localIP}:${PORT}/api/test-cors`);
   console.log(`📋 Available endpoints:`);
-  console.log(`   Authentication: http://localhost:${PORT}/api/auth`);
-  console.log(`   Products: http://localhost:${PORT}/api/products`);
-  console.log(`   Orders: http://localhost:${PORT}/api/orders`);
-  console.log(`   Payments: http://localhost:${PORT}/api/payments`);
-  console.log(`   Suppliers: http://localhost:${PORT}/api/suppliers`);
-  console.log(`   Admin: http://localhost:${PORT}/api/admin`);
-  console.log(`🌐 CORS configured for: https://aggrekart-com.onrender.com`);
+  console.log(`   Authentication: http://${localIP}:${PORT}/api/auth`);
+  console.log(`   Products: http://${localIP}:${PORT}/api/products`);
+  console.log(`   Orders: http://${localIP}:${PORT}/api/orders`);
+  console.log(`   Payments: http://${localIP}:${PORT}/api/payments`);
+  console.log(`   Suppliers: http://${localIP}:${PORT}/api/suppliers`);
+  console.log(`   Admin: http://${localIP}:${PORT}/api/admin`);
+  console.log(`🔗 Frontend should connect to: http://${localIP}:${PORT}/api`);
 });
 
 // Handle unhandled promise rejections
