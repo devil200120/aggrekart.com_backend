@@ -28,16 +28,28 @@ const upload = multer({
 // @route   GET /api/supplier/orders
 // @desc    Get supplier's orders
 // @access  Private (Supplier)
+// Replace the existing GET route validation (around line 32-38) with this:
+
+// @route   GET /api/supplier/orders
+// @desc    Get supplier's orders
+// @access  Private (Supplier)
 router.get('/', auth, authorize('supplier'), [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
-  query('status').optional().isIn(['pending', 'preparing', 'processing', 'dispatched', 'delivered', 'cancelled']).withMessage('Invalid status'),
+  query('status').optional().custom((value) => {
+    // Allow empty string or valid status values
+    if (value === '' || ['pending', 'confirmed', 'preparing', 'processing', 'dispatched', 'delivered', 'cancelled'].includes(value)) {
+      return true;
+    }
+    throw new Error('Invalid status');
+  }),
   query('dateFrom').optional().isISO8601().withMessage('Invalid date format'),
   query('dateTo').optional().isISO8601().withMessage('Invalid date format')
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -45,41 +57,96 @@ router.get('/', auth, authorize('supplier'), [
       });
     }
 
-    // Find supplier
+    console.log('🔍 Supplier orders request from user:', req.user._id);
+    console.log('📊 Query parameters:', req.query);
+
+    // Find supplier with detailed logging
     const supplier = await Supplier.findOne({ user: req.user._id });
+    
     if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
+      console.log('❌ Supplier profile not found for user:', req.user._id);
+      
+      // Check if user exists and their role
+      const user = await User.findById(req.user._id);
+      console.log('User details:', {
+        id: user?._id,
+        name: user?.name,
+        email: user?.email,
+        role: user?.role
+      });
+      
+      return res.status(404).json({
+        success: false,
+        message: 'Supplier profile not found. Please complete your supplier registration.',
+        debug: {
+          userId: req.user._id,
+          userExists: !!user,
+          userRole: user?.role
+        }
+      });
     }
+
+    console.log('✅ Found supplier:', {
+      id: supplier._id,
+      supplierId: supplier.supplierId,
+      companyName: supplier.companyName
+    });
 
     const { page = 1, limit = 10, status, dateFrom, dateTo } = req.query;
 
-    // Build filter
+    // Build filter - only add status if it's not empty
     const filter = { supplier: supplier._id };
-    if (status) filter.status = status;
+    if (status && status !== '') {
+      filter.status = status;
+    }
     if (dateFrom || dateTo) {
       filter.createdAt = {};
       if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
       if (dateTo) filter.createdAt.$lte = new Date(dateTo);
     }
 
-    const orders = await Order.getOrdersWithFilters(filter, {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      populate: ['customer']
-    });
+    console.log('📊 Query filter:', filter);
+
+    // Get orders with enhanced population
+    const orders = await Order.find(filter)
+      .populate({
+        path: 'customer',
+        select: 'name email phoneNumber'
+      })
+      .populate({
+        path: 'items.product',
+        select: 'name category price images'
+      })
+      .sort({ createdAt: -1 })
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(parseInt(limit))
+      .lean();
 
     const total = await Order.countDocuments(filter);
 
-    // Get order statistics
+    console.log(`📦 Found ${orders.length} orders out of ${total} total`);
+
+    // Get comprehensive order statistics
     const stats = {
       total: await Order.countDocuments({ supplier: supplier._id }),
       pending: await Order.countDocuments({ supplier: supplier._id, status: 'pending' }),
+      confirmed: await Order.countDocuments({ supplier: supplier._id, status: 'confirmed' }),
       preparing: await Order.countDocuments({ supplier: supplier._id, status: 'preparing' }),
       processing: await Order.countDocuments({ supplier: supplier._id, status: 'processing' }),
       dispatched: await Order.countDocuments({ supplier: supplier._id, status: 'dispatched' }),
       delivered: await Order.countDocuments({ supplier: supplier._id, status: 'delivered' }),
       cancelled: await Order.countDocuments({ supplier: supplier._id, status: 'cancelled' })
     };
+
+    console.log('📈 Order statistics:', stats);
+
+    // Log some sample orders for debugging
+    if (orders.length > 0) {
+      console.log('📋 Sample orders:');
+      orders.slice(0, 3).forEach(order => {
+        console.log(`- Order ${order.orderId}: ${order.customer?.name} - ${order.status} - ₹${order.pricing?.totalAmount}`);
+      });
+    }
 
     res.json({
       success: true,
@@ -96,6 +163,7 @@ router.get('/', auth, authorize('supplier'), [
     });
 
   } catch (error) {
+    console.error('❌ Supplier orders error:', error);
     next(error);
   }
 });
