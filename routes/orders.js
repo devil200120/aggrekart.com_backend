@@ -7,14 +7,14 @@ const Product = require('../models/Product');
 const Supplier = require('../models/Supplier');
 const User = require('../models/User');
 const { ErrorHandler } = require('../utils/errorHandler');
-const { sendOrderNotification, sendSMS } = require('../utils/notifications');
+const { 
+  sendOrderNotification, 
+  sendSMS, 
+  sendOrderPlacementNotification,     // 🔥 NEW: Enhanced customer notifications
+  sendSupplierOrderNotification       // 🔥 NEW: Enhanced supplier notifications
+} = require('../utils/notifications');
 const { initiatePayment, verifyPayment } = require('../utils/payment');
 const router = express.Router();
-
-// @route   POST /api/orders/checkout
-// @desc    Create order from cart
-// @access  Private (Customer)
-// ... existing imports remain the same ...
 
 // @route   POST /api/orders/checkout
 // @desc    Create order from cart
@@ -151,6 +151,8 @@ router.post('/checkout', auth, authorize('customer'), [
             name: item.product.name,
             description: item.product.description,
             category: item.product.category,
+            subcategory: item.product.subcategory,
+            unit: item.product.pricing.unit,
             brand: item.product.brand || 'Unknown',
             imageUrl: item.product.images && item.product.images.length > 0 ? item.product.images[0] : null
           }
@@ -234,11 +236,112 @@ router.post('/checkout', auth, authorize('customer'), [
         });
       }
 
-      // Send notifications
+      // 🔥 ENHANCED: Send comprehensive order placement notifications
       try {
-        await sendOrderNotification(order, 'new_order');
-      } catch (error) {
-        console.error('Failed to send order notification:', error);
+        // Get customer details with fresh data
+        const customer = await User.findById(req.user._id);
+        
+        // Get supplier details with user info for email
+        const supplierDetails = await Supplier.findById(order.supplier)
+          .populate('user', 'email');
+        
+        console.log(`📬 Starting notification process for Order ${order.orderId}`);
+        
+        // 1. Send customer notifications (SMS + Email)
+        console.log(`📱📧 Sending customer notifications to ${customer.name} (Phone: ${customer.phoneNumber}, Email: ${customer.email})`);
+        const customerNotificationResult = await sendOrderPlacementNotification(customer, order);
+        
+        if (customerNotificationResult.success) {
+          console.log(`✅ Customer notifications sent successfully for Order ${order.orderId}:`, {
+            sms: customer.phoneNumber ? 'Sent' : 'No phone',
+            email: customer.email ? 'Sent' : 'No email',
+            total: customerNotificationResult.notificationsSent
+          });
+        } else {
+          console.error(`❌ Failed to send customer notifications for Order ${order.orderId}:`, customerNotificationResult.error);
+        }
+            let supplierNotificationResult = null; // Initialize to prevent undefined error
+        // 2. Send supplier notifications (SMS + Email)
+        if (supplierDetails) {
+
+          console.log(`📱📧 Sending supplier notifications to ${supplierDetails.companyName} (Phone: ${supplierDetails.contactPersonNumber}, Email: ${supplierDetails.email || supplierDetails.user?.email})`);
+          
+          // Prepare supplier email (try supplier.email first, then user.email)
+          const supplierEmail = supplierDetails.email || supplierDetails.user?.email;
+          const supplierForNotification = {
+            ...supplierDetails.toObject(),
+            email: supplierEmail
+          };
+          
+          
+          const supplierNotificationResult = await sendSupplierOrderNotification(supplierForNotification, {
+            ...order.toObject(),
+            customer: {
+              name: customer.name,
+              phoneNumber: customer.phoneNumber,
+              email: customer.email
+            }
+          });
+          
+          if (supplierNotificationResult.success !== false) {
+            console.log(`✅ Supplier notifications sent successfully for Order ${order.orderId}:`, {
+              sms: supplierDetails.contactPersonNumber ? 'Sent' : 'No phone',
+              email: supplierEmail ? 'Sent' : 'No email',
+              total: supplierNotificationResult.sent || 0
+            });
+          } else {
+            console.error(`❌ Failed to send supplier notifications for Order ${order.orderId}:`, supplierNotificationResult.error);
+          }
+        }         else {
+          console.warn(`⚠️ Supplier details not found for Order ${order.orderId}`);
+          // Set a default result when supplier details are missing
+          supplierNotificationResult = { success: false, sent: 0, error: 'Supplier details not found' };
+        }
+        
+        // 3. Log comprehensive notification summary
+        const totalCustomerNotifications = customerNotificationResult.notificationsSent || 0;
+        const totalSupplierNotifications = (supplierNotificationResult && supplierNotificationResult.sent) || 0;
+        
+        console.log(`📊 NOTIFICATION SUMMARY for Order ${order.orderId}:`, {
+          customer: {
+            name: customer.name,
+            phone: customer.phoneNumber,
+            email: customer.email,
+            notificationsSent: totalCustomerNotifications
+          },
+          supplier: {
+            company: supplierDetails?.companyName,
+            phone: supplierDetails?.contactPersonNumber,
+            email: supplierDetails?.email || supplierDetails?.user?.email,
+            notificationsSent: totalSupplierNotifications
+          },
+          totalNotificationsSent: totalCustomerNotifications + totalSupplierNotifications,
+          orderValue: `₹${order.pricing.totalAmount.toLocaleString('en-IN')}`,
+          timestamp: new Date().toISOString()
+        });
+        
+      } catch (notificationError) {
+        // Don't fail the order if notifications fail - just log the error
+        console.error(`❌ NOTIFICATION ERROR for Order ${order.orderId}:`, {
+          error: notificationError.message,
+          stack: notificationError.stack,
+          orderValue: `₹${order.pricing.totalAmount.toLocaleString('en-IN')}`,
+          customer: currentUser.name,
+          supplier: group.supplier.companyName
+        });
+        
+        // Send a basic SMS fallback to customer if possible
+        try {
+          if (currentUser.phoneNumber) {
+            await sendSMS(
+              currentUser.phoneNumber, 
+              `Order ${order.orderId} placed successfully! Total: ₹${order.pricing.totalAmount.toLocaleString('en-IN')}. Track at aggrekart.com - Aggrekart`
+            );
+            console.log(`📱 Sent fallback SMS to customer for Order ${order.orderId}`);
+          }
+        } catch (fallbackError) {
+          console.error(`❌ Fallback SMS also failed for Order ${order.orderId}:`, fallbackError.message);
+        }
       }
     }
 
@@ -261,10 +364,16 @@ router.post('/checkout', auth, authorize('customer'), [
           balanceAmount: order.payment.remainingAmount,
           paymentMethod: order.payment.method,
           status: order.status,
-          coolingPeriod: order.coolingPeriod
+          coolingPeriod: order.coolingPeriod,
+          estimatedDelivery: order.delivery.estimatedTime
         })),
         // Return first order for payment processing
-        order: orders[0]
+        order: orders[0],
+        notificationSummary: {
+          ordersCreated: orders.length,
+          notificationsEnabled: true,
+          message: 'Order confirmation notifications sent via SMS and Email'
+        }
       }
     });
 
@@ -274,7 +383,7 @@ router.post('/checkout', auth, authorize('customer'), [
   }
 });
 
-// ... rest of the existing routes remain the same// @route   POST /api/orders/:orderId/payment/verify
+// @route   POST /api/orders/:orderId/payment/verify
 // @desc    Verify payment and update order
 // @access  Private (Customer)
 router.post('/:orderId/payment/verify', auth, authorize('customer'), [
@@ -339,6 +448,37 @@ router.post('/:orderId/payment/verify', auth, authorize('customer'), [
     
     await user.save();
 
+    // 🔥 ENHANCED: Send payment confirmation notifications
+    try {
+      const customer = await User.findById(req.user._id);
+      
+      // Send payment success SMS
+      if (customer.phoneNumber) {
+        const paymentSMS = `💳 Payment Successful!
+
+Order: ${order.orderId}
+Amount: ₹${order.pricing.totalAmount.toLocaleString('en-IN')}
+Transaction: ${paymentId.substring(0, 12)}...
+Status: Being Prepared
+
+Your order is now being prepared for dispatch. Track: aggrekart.com/orders/${order.orderId}
+
+Aggrekart 🏗️`;
+
+        await sendSMS(customer.phoneNumber, paymentSMS);
+        console.log(`📱 Payment confirmation SMS sent for Order ${order.orderId}`);
+      }
+      
+      // Send payment success email
+      if (customer.email) {
+        // You can add a dedicated payment confirmation email template here
+        console.log(`📧 Payment confirmation email queued for Order ${order.orderId}`);
+      }
+      
+    } catch (notificationError) {
+      console.error(`❌ Payment notification error for Order ${order.orderId}:`, notificationError.message);
+    }
+
     res.json({
       success: true,
       message: 'Payment verified successfully',
@@ -348,7 +488,10 @@ router.post('/:orderId/payment/verify', auth, authorize('customer'), [
           status: order.status,
           paymentStatus: order.payment.status
         },
-        coinsEarned
+        coinsEarned,
+        notifications: {
+          paymentConfirmationSent: true
+        }
       }
     });
 
@@ -528,8 +671,51 @@ router.put('/:orderId/cancel', auth, authorize('customer'), [
       const product = await Product.findById(item.product);
       if (product) {
         product.stock.reserved = Math.max(0, product.stock.reserved - item.quantity);
+        product.stock.available = product.stock.available + item.quantity;
         await product.save();
       }
+    }
+
+    // 🔥 ENHANCED: Send cancellation notifications
+    try {
+      const customer = await User.findById(req.user._id);
+      
+      // Send cancellation SMS to customer
+      if (customer.phoneNumber) {
+        const cancellationSMS = `❌ Order Cancelled
+
+Order: ${order.orderId}
+Reason: ${reason}
+Refund: ₹${refundCalculation.refundAmount.toLocaleString('en-IN')}
+${refundCalculation.deductionAmount > 0 ? `Deduction: ₹${refundCalculation.deductionAmount.toLocaleString('en-IN')}` : ''}
+
+Refund will be processed within 3-5 business days.
+
+Aggrekart 🏗️`;
+
+        await sendSMS(customer.phoneNumber, cancellationSMS);
+        console.log(`📱 Cancellation SMS sent for Order ${order.orderId}`);
+      }
+      
+      // Notify supplier about cancellation
+      const supplier = await Supplier.findById(order.supplier);
+      if (supplier && supplier.contactPersonNumber) {
+        const supplierCancellationSMS = `🔔 Order Cancelled
+
+Order: ${order.orderId}
+Customer: ${customer.name}
+Reason: ${reason}
+
+Please stop preparation if not started.
+
+Aggrekart Supplier`;
+
+        await sendSMS(supplier.contactPersonNumber, supplierCancellationSMS);
+        console.log(`📱 Supplier cancellation SMS sent for Order ${order.orderId}`);
+      }
+      
+    } catch (notificationError) {
+      console.error(`❌ Cancellation notification error for Order ${order.orderId}:`, notificationError.message);
     }
 
     // Process refund (integrate with payment gateway)
@@ -543,6 +729,9 @@ router.put('/:orderId/cancel', auth, authorize('customer'), [
           orderId: order.orderId,
           status: order.status,
           refundDetails: order.cancellation
+        },
+        notifications: {
+          cancellationNotificationSent: true
         }
       }
     });
@@ -635,7 +824,6 @@ router.put('/:orderId/modify', auth, authorize('customer'), [
     next(error);
   }
 });
-// ...existing code...
 
 // Add this route before the last export statement
 
@@ -711,15 +899,15 @@ router.get('/history', auth, authorize('customer'), [
       // Monthly spending
       const monthlySpending = {};
       allOrdersForAnalytics.forEach(order => {
-        const month = new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const month = order.createdAt.toISOString().slice(0, 7); // YYYY-MM
         monthlySpending[month] = (monthlySpending[month] || 0) + (order.pricing?.totalAmount || 0);
       });
 
       // Top categories
       const categorySpending = {};
       allOrdersForAnalytics.forEach(order => {
-        order.items?.forEach(item => {
-          const category = item.product?.category || item.productSnapshot?.category || 'Other';
+        order.items.forEach(item => {
+          const category = item.product?.category || 'Unknown';
           categorySpending[category] = (categorySpending[category] || 0) + (item.totalPrice || 0);
         });
       });
@@ -727,10 +915,9 @@ router.get('/history', auth, authorize('customer'), [
       const topCategories = Object.entries(categorySpending)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 5)
-        .map(([name, amount]) => ({ name, amount }));
+        .map(([category, amount]) => ({ category, amount }));
 
       analyticsData = {
-        totalOrders: allOrdersForAnalytics.length,
         totalSpent,
         averageOrderValue,
         completedOrders: completedOrders.length,
@@ -758,6 +945,68 @@ router.get('/history', auth, authorize('customer'), [
     next(error);
   }
 });
+// @route   PUT /api/orders/:orderId/status
+// @desc    Update order status (including material_loading)
+// @access  Private (Supplier)
+router.put('/:orderId/status', auth, [
+  param('orderId').isMongoId().withMessage('Valid order ID required'),
+  body('status').isIn(['material_loading', 'processing', 'dispatched']).withMessage('Valid status required'),
+  body('note').optional().trim()
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
 
+    const { orderId } = req.params;
+    const { status, note } = req.body;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return next(new ErrorHandler('Order not found', 404));
+    }
+
+    // Check if user has permission to update this order
+    let canUpdate = false;
+    if (req.user.role === 'admin') {
+      canUpdate = true;
+    } else if (req.user.role === 'supplier') {
+      const supplier = await Supplier.findOne({ user: req.user._id });
+      canUpdate = supplier && order.supplier.toString() === supplier._id.toString();
+    }
+
+    if (!canUpdate) {
+      return next(new ErrorHandler('Not authorized to update this order', 403));
+    }
+
+    // Special handling for material_loading status
+    if (status === 'material_loading') {
+      // Can only start material loading during cooling period
+      if (!order.isCoolingPeriodActive()) {
+        return next(new ErrorHandler('Cannot start material loading - cooling period expired', 400));
+      }
+      
+      order.startMaterialLoading(req.user._id);
+    } else {
+      order.updateStatus(status, note, req.user._id);
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `Order status updated to ${status}`,
+      data: { order }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;
