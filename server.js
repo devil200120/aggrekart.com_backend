@@ -25,11 +25,37 @@ app.use(helmet({
 }));
 
 // CORS configuration - PRODUCTION READY
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const { globalErrorHandler } = require('./utils/errorHandler');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+
+// Security middleware
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:", "http:"],
+    },
+  },
+}));
+
+// CORS configuration
 const allowedOrigins = [
-  'https://aggrekart-com.onrender.com',  // Your deployed frontend (NO trailing slash)
-  'http://localhost:3000',               // Local development
-  'http://localhost:5173',               // Vite dev server
-  'http://127.0.0.1:3000',              // Alternative localhost
+  'https://aggrekart-com.onrender.com',    // Your deployed frontend
+  'http://localhost:3000',                 // Local React dev
+  'http://localhost:5173',                 // Local Vite dev
 ];
 
 const corsOptions = {
@@ -47,28 +73,17 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('❌ CORS blocked origin:', origin);
-      console.log('📋 Allowed origins:', allowedOrigins);
       callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With',
-    'Accept',
-    'Origin',
-    'Cache-Control',
-    'Pragma'
-  ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 200,
-  maxAge: 86400
 };
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+
+// ... rest of your server code stays the same
 
 // Rate limiting
 const limiter = rateLimit({
