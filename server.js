@@ -257,7 +257,7 @@ app.use('*', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 // Create server
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT,  () => {
   console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
