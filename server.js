@@ -31,56 +31,38 @@ app.use(helmet({
 // CORS configuration - UPDATED FOR LOCAL NETWORK ACCESS
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
+    console.log('🌐 Incoming request from origin:', origin);
     
-    const allowedOrigins = [
-      // Production URLs
+    // ALWAYS allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) {
+      console.log('✅ No origin - allowing request');
+      return callback(null, true);
+    }
+    
+    // For development mode - allow EVERYTHING
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('✅ Development mode - allowing all origins');
+      return callback(null, true);
+    }
+    
+    // Production whitelist (only when NODE_ENV is production)
+    const productionOrigins = [
       'https://aggrekart-com.onrender.com',
       'https://aggrekart-com.onrender.com/',
-      
-      // Local development
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    // Local network patterns (for mobile devices and other computers)
-    const localNetworkPatterns = [
-      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/,  // 192.168.x.x:3000
-      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/,   // 10.x.x.x:3000
-      /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}:3000$/, // 172.16-31.x.x:3000
-      /^http:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/ // Any IP:3000 (for local testing)
-    ];
-    
-    console.log('🌐 Request from origin:', origin);
-    
-    // Check if origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS allowed (whitelist):', origin);
+    if (productionOrigins.includes(origin)) {
+      console.log('✅ Production origin allowed:', origin);
       return callback(null, true);
     }
     
-    // Check if origin matches local network patterns
-    const isLocalNetwork = localNetworkPatterns.some(pattern => pattern.test(origin));
-    if (isLocalNetwork) {
-      console.log('✅ CORS allowed (local network):', origin);
-      return callback(null, true);
-    }
-    
-    // For development, be more permissive
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ CORS allowed (development mode):', origin);
-      return callback(null, true);
-    }
-    
-    console.log('❌ CORS blocked origin:', origin);
-    console.log('📋 Allowed origins:', allowedOrigins);
-    callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+    // If we reach here in production, block it
+    console.log('❌ Production origin blocked:', origin);
+    callback(new Error(`Not allowed by CORS in production. Origin: ${origin}`));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
   allowedHeaders: [
     'Content-Type', 
     'Authorization', 
@@ -90,13 +72,15 @@ const corsOptions = {
     'Cache-Control',
     'Pragma',
     'User-Agent',
-    'Referer'
+    'Referer',
+    'X-CSRF-Token',
+    'X-Forwarded-For',
+    'X-Real-IP'
   ],
-  exposedHeaders: ['Content-Range', 'set-cookie'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'set-cookie'],
   optionsSuccessStatus: 200,
-  maxAge: 86400
+  preflightContinue: false
 };
-
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly for all routes
