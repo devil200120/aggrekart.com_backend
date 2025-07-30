@@ -329,23 +329,6 @@ process.on('uncaughtException', (err) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received');
-  console.log('Shutting down gracefully...');
-  server.close(() => {
-    console.log('Process terminated');
-    mongoose.connection.close();
-  });
-});
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received');
-  console.log('Shutting down gracefully...');
-  server.close(() => {
-    console.log('Process terminated');
-    mongoose.connection.close();
-    process.exit(0);
-  });
-});
 
 module.exports = app;
