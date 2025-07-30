@@ -10,59 +10,69 @@ require('dotenv').config();
 
 const app = express();
 
-// ---- Security middleware ----
-app.use(
-  helmet({
-    crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https:", "http:"],
-      },
+// Security middleware
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:", "http:"],
     },
-  })
-);
+  },
+}));
 
-// ---- CORS configuration (PRODUCTION/DEVELOPMENT SWITCH) ----
+// CORS configuration - PRODUCTION READY
 const allowedOrigins = [
-  'https://aggrekart-com.onrender.com',    // Deployed frontend (no slash at end!)
-  'http://localhost:3000',             // Local dev React
-  'http://localhost:5173',             // Local Vite
-  'http://127.0.0.1:3000',
-  process.env.FRONTEND_URL,            // Environment variable (must be set in Render!)
-].filter(Boolean); // Remove empty
+  'https://aggrekart-com.onrender.com',  // Your deployed frontend (NO trailing slash)
+  'http://localhost:3000',               // Local development
+  'http://localhost:5173',               // Vite dev server
+  'http://127.0.0.1:3000',              // Alternative localhost
+];
 
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log('🌐 Incoming request from origin:', origin);
+    
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
-      // No origin header (Postman, server/server, curl)
+      console.log('✅ No origin - allowing request');
       return callback(null, true);
     }
+    
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+      console.log('✅ CORS allowed for:', origin);
+      callback(null, true);
+    } else {
+      console.log('❌ CORS blocked origin:', origin);
+      console.log('📋 Allowed origins:', allowedOrigins);
+      callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
     }
-    // Otherwise, block!
-    return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin',
-    'Cache-Control', 'Pragma'
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Cache-Control',
+    'Pragma'
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   optionsSuccessStatus: 200,
   maxAge: 86400
 };
+
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// ---- Rate limiting ----
+// Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'development' ? 200 : 1000,
   message: {
     success: false,
@@ -70,32 +80,38 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => ['/api/health', '/health'].includes(req.path),
+  skip: (req) => {
+    return req.path === '/api/health' || req.path === '/health';
+  }
 });
-app.use('/api', limiter);
+app.use('/api/', limiter);
 
-// ---- Body parsing middleware ----
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ---- Logging ----
-app.use(morgan(process.env.NODE_ENV === 'development' ? 'combined' : 'dev'));
+// Logging
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('combined'));
+} else {
+  app.use(morgan('dev'));
+}
 
-// ---- Database connection ----
+// Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aggrekart', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => {
-    console.log('✅ MongoDB connected successfully');
-    console.log(`📊 Database: ${mongoose.connection.name}`);
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
-  });
+.then(() => {
+  console.log('✅ MongoDB connected successfully');
+  console.log(`📊 Database: ${mongoose.connection.name}`);
+})
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
+});
 
-// ---- Health & Debug ----
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -105,21 +121,31 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
+
 app.get('/api/health', (req, res) => {
-  res.status(200).json({
+  res.status(200).json({ 
     success: true,
-    status: 'OK',
+    status: 'OK', 
     message: 'Aggrekart API is running',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    cors: { allowedOrigins },
+    cors: {
+      allowedOrigins: allowedOrigins
+    },
     features: [
-      'User Authentication', 'Product Management', 'Order Management',
-      'Supplier Management', 'Admin Panel', 'Payment Integration', 'Supplier Onboarding'
+      'User Authentication',
+      'Product Management', 
+      'Order Management',
+      'Supplier Management',
+      'Admin Panel',
+      'Payment Integration',
+      'Supplier Onboarding'
     ]
   });
 });
+
+// CORS test endpoint
 app.get('/api/test-cors', (req, res) => {
   res.json({
     success: true,
@@ -130,16 +156,28 @@ app.get('/api/test-cors', (req, res) => {
     requestHeaders: {
       origin: req.headers.origin,
       referer: req.headers.referer,
-      host: req.headers.host,
+      host: req.headers.host
     }
   });
 });
 
-// ---- API Routes ----
+// API Routes
 app.use('/api/auth', require('./routes/auth'));
-// ... Add other routes the same way as you have
+app.use('/api/users', require('./routes/users'));
+app.use('/api/products', require('./routes/products'));
+app.use('/api/cart', require('./routes/cart'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/wishlist', require('./routes/wishlist'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/supplier/orders', require('./routes/supplier-orders'));
+app.use('/api/supplier/onboarding', require('./routes/supplier-onboarding'));
+app.use('/api/suppliers', require('./routes/suppliers'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/loyalty', require('./routes/loyalty'));
+app.use('/api/pilot', require('./routes/pilot'));
+app.use('/api/reports', require('./routes/reports'));
 
-// ---- Root endpoint ----
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -148,61 +186,115 @@ app.get('/', (req, res) => {
     documentation: '/api/health',
     cors_test: '/api/test-cors',
     environment: process.env.NODE_ENV || 'development',
-    // endpoints: { ... }
+    endpoints: {
+      auth: '/api/auth',
+      users: '/api/users',
+      products: '/api/products',
+      cart: '/api/cart',
+      orders: '/api/orders',
+      payments: '/api/payments',
+      suppliers: '/api/suppliers',
+      admin: '/api/admin',
+      loyalty: '/api/loyalty',
+      pilot: '/api/pilot',
+      reports: '/api/reports'
+    }
   });
 });
 
-// ---- Serve static files in PRODUCTION mode ----
+// Serve static files ONLY in production
 if (process.env.NODE_ENV === 'production') {
-  // YOUR BUILD PATH from React: adjust as needed
+  // Adjust path to your actual build folder
   app.use(express.static(path.join(__dirname, 'build')));
+  
+  // Catch all handler for React Router (only for non-API routes)
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path === '/health') return next();
+    // Skip API routes and health checks
+    if (req.path.startsWith('/api/') || req.path === '/health') {
+      return next();
+    }
+    
     res.sendFile(path.join(__dirname, 'build', 'index.html'));
   });
 }
 
-// ---- Error handling ----
+// Global error handling middleware
 app.use(globalErrorHandler);
 
+// 404 handler for API routes
 app.use('/api/*', (req, res) => {
-  res.status(404).json({
+  res.status(404).json({ 
     success: false,
     message: `API route ${req.originalUrl} not found`,
+    availableRoutes: [
+      '/api/auth',
+      '/api/users',
+      '/api/products',
+      '/api/cart',
+      '/api/orders',
+      '/api/payments',
+      '/api/suppliers',
+      '/api/admin'
+    ]
   });
 });
+
+// 404 handler for all other routes
 app.use('*', (req, res) => {
-  res.status(404).json({
+  res.status(404).json({ 
     success: false,
     message: `Route ${req.originalUrl} not found`,
     suggestion: 'Try /api/health for API status'
   });
 });
 
-// ---- Start server ----
 const PORT = process.env.PORT || 5000;
+
+// Create server
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
-  console.log(`🌐 CORS configured for: ${allowedOrigins.join(', ')}`);
+  console.log(`🧪 CORS Test: http://localhost:${PORT}/api/test-cors`);
+  console.log(`🌐 CORS configured for:`, allowedOrigins);
+  console.log(`📋 Available endpoints:`);
+  console.log(`   Products: http://localhost:${PORT}/api/products`);
+  console.log(`   Authentication: http://localhost:${PORT}/api/auth`);
+  console.log(`   Orders: http://localhost:${PORT}/api/orders`);
 });
 
-process.on('unhandledRejection', (err) => {
+// Error handlers
+process.on('unhandledRejection', (err, promise) => {
   console.log('💥 Unhandled Promise Rejection:', err.message);
-  server.close(() => process.exit(1));
+  console.log('Shutting down server...');
+  server.close(() => {
+    process.exit(1);
+  });
 });
+
 process.on('uncaughtException', (err) => {
   console.log('💥 Uncaught Exception:', err.message);
+  console.log('Shutting down server...');
   process.exit(1);
 });
+
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  server.close(() => { mongoose.connection.close(); });
+  console.log('SIGTERM received');
+  console.log('Shutting down gracefully...');
+  server.close(() => {
+    console.log('Process terminated');
+    mongoose.connection.close();
+  });
 });
+
 process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  server.close(() => { mongoose.connection.close(); process.exit(0); });
+  console.log('SIGINT received');
+  console.log('Shutting down gracefully...');
+  server.close(() => {
+    console.log('Process terminated');
+    mongoose.connection.close();
+    process.exit(0);
+  });
 });
 
 module.exports = app;
