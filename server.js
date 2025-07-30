@@ -241,7 +241,8 @@ app.get('/', (req, res) => {
 });
 
 // Serve static files in production (if you have a build folder)
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'development') {
+  
   const path = require('path');
   
   // Check if build directory exists
