@@ -155,6 +155,48 @@ gstNumber: {
       type: String,
       required: [true, 'Branch name is required']
     },
+    // Supplier can only modify these fields
+supplierControls: {
+  pricing: {
+    basePrice: {
+      type: Number,
+      required: true
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  deliveryTime: {
+    estimatedTime: String,
+    lastUpdated: Date,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  stock: {
+    available: Number,
+    lastUpdated: Date,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }
+},
+// Admin controls base product creation
+isBaseProduct: {
+  type: Boolean,
+  default: false // Only admin creates base products
+},
+createdByAdmin: {
+  type: Boolean,
+  default: false
+},
     // Around line 155, update the upiId field:
 
 // REPLACE the upiId field (around line 154-162):
