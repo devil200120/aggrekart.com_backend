@@ -295,7 +295,7 @@ function getLocalIpAddress() {
 const localIP = getLocalIpAddress();
 
 // Create server and store reference for graceful shutdown
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT,  () => {
   console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 Local: http://localhost:${PORT}`);
