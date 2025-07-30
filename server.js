@@ -25,17 +25,8 @@ app.use(helmet({
 }));
 
 // CORS configuration - PRODUCTION READY
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const { globalErrorHandler } = require('./utils/errorHandler');
-const path = require('path');
-require('dotenv').config();
 
-const app = express();
+
 
 // Security middleware
 app.use(helmet({
