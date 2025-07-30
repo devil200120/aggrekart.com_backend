@@ -145,16 +145,16 @@ const orderSchema = new mongoose.Schema({
   
   // Order status and timeline - FIXED: Added 'confirmed' status
   status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'preparing', 'processing', 'dispatched', 'delivered', 'cancelled'], // FIXED: Added 'confirmed'
-    default: 'pending'
-  },
+  type: String,
+  enum: ['pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled'],
+  default: 'pending'
+},
   
   timeline: [{
-    status: {
-      type: String,
-      enum: ['pending', 'confirmed', 'preparing', 'processing', 'dispatched', 'delivered', 'cancelled'] // FIXED: Added 'confirmed'
-    },
+   status: {
+  type: String,
+  enum: ['pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled']
+},
     timestamp: {
       type: Date,
       default: Date.now
@@ -322,6 +322,18 @@ orderSchema.methods.calculateCoolingPeriodRefund = function() {
   } else { // Second hour (50-100%)
     deductionPercentage = 2; // 2% deduction
   }
+  // Method to start material loading phase
+orderSchema.methods.startMaterialLoading = function(updatedBy) {
+  if (!this.isCoolingPeriodActive()) {
+    throw new Error('Cannot start material loading - cooling period expired');
+  }
+  
+  this.updateStatus('material_loading', 'Material loading started within cooling period', updatedBy);
+  this.coolingPeriod.isActive = false; // End cooling period
+  this.coolingPeriod.canModify = false;
+  
+  return this;
+};
   
   const deductionAmount = Math.round((this.payment.advanceAmount * deductionPercentage) / 100);
   const refundAmount = this.payment.advanceAmount - deductionAmount;
