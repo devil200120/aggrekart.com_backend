@@ -428,7 +428,7 @@ router.post('/whatsapp-register', [
     // Set cookie
     res.cookie('aggrekart_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'development',
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
