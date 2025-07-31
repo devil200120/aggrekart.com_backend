@@ -1,418 +1,422 @@
-const express = require('express');
-const { body, param, query, validationResult } = require('express-validator');
-const { auth, authorize } = require('../middleware/auth');
 const Supplier = require('../models/Supplier');
-const Product = require('../models/Product');
-const SupplierOnboarding = require('../utils/supplierOnboarding');
-const { ErrorHandler } = require('../utils/errorHandler');
-const router = express.Router();
+const User = require('../models/User');
+const { sendEmail, sendSMS } = require('./notifications');
+const { getGSTDetails } = require('./gstAPI');
 
-// @route   GET /api/supplier/onboarding/status
-// @desc    Get onboarding status
-// @access  Private (Supplier)
-router.get('/status', auth, authorize('supplier'), async (req, res, next) => {
-  try {
-    const supplier = await Supplier.findOne({ user: req.user._id });
-    if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
+// Supplier onboarding workflow
+class SupplierOnboarding {
+  
+  // Step 1: Initial registration
+  static async registerSupplier(userData, supplierData) {
+    try {
+      // Validate GST number
+      const gstDetails = await getGSTDetails(supplierData.gstNumber);
+      
+      // Create supplier with pending status
+      const supplier = new Supplier({
+        ...supplierData,
+        gstVerificationDetails: gstDetails,
+        onboardingStep: 'registration_complete',
+        isApproved: false,
+        isActive: false
+      });
+
+      await supplier.save();
+
+      // Send welcome email with next steps
+      await this.sendWelcomeEmail(supplier);
+
+      return {
+        success: true,
+        supplier,
+        nextStep: 'document_upload'
+      };
+
+    } catch (error) {
+      throw new Error(`Registration failed: ${error.message}`);
     }
+  }
 
-    const status = await SupplierOnboarding.getOnboardingStatus(supplier._id);
+  // Step 2: Document verification
+  static async verifyDocuments(supplierId, documents) {
+    try {
+      const supplier = await Supplier.findById(supplierId);
+      if (!supplier) {
+        throw new Error('Supplier not found');
+      }
+
+      // Update documents
+      supplier.documentsUploaded = documents.map(doc => ({
+        type: doc.type,
+        url: doc.url,
+        originalName: doc.originalName,
+        isVerified: false // Will be verified by admin
+      }));
+
+      supplier.onboardingStep = 'documents_uploaded';
+      await supplier.save();
+
+      // Notify admin for document review
+      await this.notifyAdminForReview(supplier);
+
+      return {
+        success: true,
+        message: 'Documents uploaded successfully',
+        nextStep: 'admin_review'
+      };
+
+    } catch (error) {
+      throw new Error(`Document upload failed: ${error.message}`);
+    }
+  }
+
+  // Step 3: Admin review and approval
+  static async approveSupplier(supplierId, adminId, commissionRate = 5) {
+    try {
+      const supplier = await Supplier.findById(supplierId).populate('user');
+      if (!supplier) {
+        throw new Error('Supplier not found');
+      }
+
+      // Update approval status
+      supplier.isApproved = true;
+      supplier.isActive = true;
+      supplier.approvedBy = adminId;
+      supplier.approvedAt = new Date();
+      supplier.commissionRate = commissionRate;
+      supplier.onboardingStep = 'approved';
+
+      await supplier.save();
+
+      // Send approval notifications
+      await this.sendApprovalNotification(supplier);
+      
+      // Send onboarding completion guide
+      await this.sendOnboardingGuide(supplier);
+
+      return {
+        success: true,
+        message: 'Supplier approved successfully',
+        supplier
+      };
+
+    } catch (error) {
+      throw new Error(`Approval failed: ${error.message}`);
+    }
+  }
+
+  // Step 4: Product setup assistance
+  static async setupProductCatalog(supplierId, categories) {
+    try {
+      const supplier = await Supplier.findById(supplierId);
+      if (!supplier) {
+        throw new Error('Supplier not found');
+      }
+
+      // Update categories
+      supplier.categories = categories;
+      supplier.onboardingStep = 'catalog_setup';
+      await supplier.save();
+
+      // Send product setup guide
+      await this.sendProductSetupGuide(supplier, categories);
+
+      return {
+        success: true,
+        message: 'Product categories configured',
+        nextStep: 'first_products'
+      };
+
+    } catch (error) {
+      throw new Error(`Catalog setup failed: ${error.message}`);
+    }
+  }
+
+  // Utility methods
+  static async sendWelcomeEmail(supplier) {
+    const subject = 'Welcome to Aggrekart - Supplier Registration Received';
+    const content = `
+      Dear ${supplier.tradeOwnerName},
+
+      Thank you for registering as a supplier with Aggrekart!
+
+      Your application has been received and is being reviewed. Here's what happens next:
+
+      1. Document Verification (1-2 business days)
+      2. Profile Review (1-2 business days)
+      3. Account Approval & Activation
+
+      Your Supplier ID: ${supplier.supplierId}
+
+      We'll keep you updated on the status of your application.
+
+      Best regards,
+      Aggrekart Team
+    `;
+
+    await sendEmail(supplier.email, subject, content);
+  }
+
+  static async notifyAdminForReview(supplier) {
+    // In a real application, this would send notifications to admin users
+    console.log(`New supplier pending review: ${supplier.companyName} (${supplier.supplierId})`);
     
-    // Get product count
-    const productCount = await Product.countDocuments({ supplier: supplier._id });
-    status.productsAdded = productCount > 0;
+    // Could also send email to admin team
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (adminEmail) {
+      await sendEmail(
+        adminEmail,
+        'New Supplier Registration - Review Required',
+        `
+        A new supplier has completed registration and requires review:
 
-    // Recalculate completion percentage with product data
-    let completed = 0;
-    const totalSteps = 5;
+        Company: ${supplier.companyName}
+        Supplier ID: ${supplier.supplierId}
+        GST Number: ${supplier.gstNumber}
+        Contact: ${supplier.contactPersonName} (${supplier.contactPersonNumber})
 
-    if (supplier.onboardingStep === 'registration_complete') completed++;
-    if (status.documentsUploaded) completed++;
-    if (supplier.isApproved) completed++;
-    if (status.profileComplete) completed++;
-    if (status.productsAdded) completed++;
-
-    status.completionPercentage = Math.round((completed / totalSteps) * 100);
-
-    // Get next steps
-    const nextSteps = [];
-    if (!status.documentsUploaded) {
-      nextSteps.push({
-        title: 'Upload Documents',
-        description: 'Upload GST certificate, PAN card, and bank statement',
-        action: 'upload_documents'
-      });
+        Please review and approve/reject in the admin panel.
+        `
+      );
     }
-    if (!supplier.isApproved && status.documentsUploaded) {
-      nextSteps.push({
-        title: 'Wait for Approval',
-        description: 'Your documents are being reviewed by our team',
-        action: 'wait_approval'
-      });
-    }
-    if (supplier.isApproved && !status.profileComplete) {
-      nextSteps.push({
-        title: 'Complete Profile',
-        description: 'Set transport rates and configure your service areas',
-        action: 'complete_profile'
-      });
-    }
-    if (supplier.isApproved && status.profileComplete && !status.productsAdded) {
-      nextSteps.push({
-        title: 'Add Products',
-        description: 'Start adding products to your catalog',
-        action: 'add_products'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        status,
-        nextSteps,
-        supplier: {
-          supplierId: supplier.supplierId,
-          companyName: supplier.companyName,
-          isApproved: supplier.isApproved,
-          createdAt: supplier.createdAt
-        }
-      }
-    });
-
-  } catch (error) {
-    next(error);
   }
-});
 
-// @route   POST /api/supplier/onboarding/setup-categories
-// @desc    Setup product categories
-// @access  Private (Supplier)
-router.post('/setup-categories', auth, authorize('supplier'), [
-  body('categories').isArray({ min: 1, max: 5 }).withMessage('Select 1-5 categories'),
-  body('categories.*').isIn(['aggregate', 'sand', 'tmt_steel', 'bricks_blocks', 'cement']).withMessage('Invalid category')
-], async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
+  static async sendApprovalNotification(supplier) {
+    // Email notification
+    const subject = 'Supplier Account Approved - Welcome to Aggrekart!';
+    const content = `
+      Dear ${supplier.tradeOwnerName},
 
-    const { categories } = req.body;
+      Congratulations! Your supplier account has been approved.
 
-    const supplier = await Supplier.findOne({ user: req.user._id });
-    if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
-    }
+      Account Details:
+      - Supplier ID: ${supplier.supplierId}
+      - Company: ${supplier.companyName}
+      - Commission Rate: ${supplier.commissionRate}%
 
-    if (!supplier.isApproved) {
-      return next(new ErrorHandler('Supplier account not approved yet', 403));
-    }
+      You can now:
+      ✓ Add products to your catalog
+      ✓ Receive and manage orders
+      ✓ Track sales and analytics
+      ✓ Update pricing and inventory
 
-    const result = await SupplierOnboarding.setupProductCatalog(supplier._id, categories);
+      Login to your supplier dashboard to get started.
 
-    res.json({
-      success: true,
-      message: 'Product categories configured successfully',
-      data: {
-        categories,
-        nextStep: 'add_products'
-      }
-    });
+      Need help? Our onboarding team is here to assist you.
 
-  } catch (error) {
-    next(error);
+      Best regards,
+      Aggrekart Team
+    `;
+
+    await sendEmail(supplier.email, subject, content);
+
+    // SMS notification
+    await sendSMS(
+      supplier.contactPersonNumber,
+      `Congratulations! Your Aggrekart supplier account (${supplier.supplierId}) has been approved. Login to start selling construction materials.`
+    );
   }
-});
 
-// @route   GET /api/supplier/onboarding/checklist
-// @desc    Get onboarding checklist
-// @access  Private (Supplier)
-router.get('/checklist', auth, authorize('supplier'), async (req, res, next) => {
-  try {
-    const supplier = await Supplier.findOne({ user: req.user._id });
-    if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
-    }
+  static async sendOnboardingGuide(supplier) {
+    const subject = 'Getting Started Guide - Aggrekart Supplier';
+    const content = `
+      Dear ${supplier.tradeOwnerName},
 
-    const productCount = await Product.countDocuments({ supplier: supplier._id });
+      Welcome to the Aggrekart family! Here's your step-by-step guide to get started:
 
-    const checklist = [
-      {
-        id: 'registration',
-        title: 'Complete Registration',
-        description: 'Basic business information and GST details',
-        completed: !!supplier.gstNumber,
-        required: true
-      },
-      {
-        id: 'documents',
-        title: 'Upload Documents',
-        description: 'GST certificate, PAN card, bank statement',
-        completed: supplier.documentsUploaded.length >= 3,
-        required: true,
-        items: [
-          {
-            name: 'GST Certificate',
-            completed: supplier.documentsUploaded.some(doc => doc.type === 'gst_certificate')
-          },
-          {
-            name: 'PAN Card',
-            completed: supplier.documentsUploaded.some(doc => doc.type === 'pan_card')
-          },
-          {
-            name: 'Bank Statement',
-            completed: supplier.documentsUploaded.some(doc => doc.type === 'bank_statement')
-          }
-        ]
-      },
-      {
-        id: 'approval',
-        title: 'Account Approval',
-        description: 'Wait for admin to review and approve your account',
-        completed: supplier.isApproved,
-        required: true
-      },
-      {
-        id: 'transport_rates',
-        title: 'Set Transport Rates',
-        description: 'Configure delivery charges for different distances',
-        completed: !!(supplier.transportRates.upTo5km.costPerKm && 
-                     supplier.transportRates.upTo10km.costPerKm &&
-                     supplier.transportRates.upTo20km.costPerKm &&
-                     supplier.transportRates.above20km.costPerKm),
-        required: true
-      },
-      {
-        id: 'categories',
-        title: 'Select Product Categories',
-        description: 'Choose which materials you will supply',
-        completed: supplier.categories.length > 0,
-        required: true
-      },
-      {
-        id: 'products',
-        title: 'Add Products',
-        description: 'Create your first product listings',
-        completed: productCount > 0,
-        required: true
-      },
-      {
-        id: 'profile_photo',
-        title: 'Add Company Logo',
-        description: 'Upload your company logo for better recognition',
-        completed: false, // Would check for uploaded logo
-        required: false
-      },
-      {
-        id: 'service_areas',
-        title: 'Define Service Areas',
-        description: 'Set pincodes where you can deliver',
-        completed: supplier.serviceAreas.length > 0,
-        required: false
-      }
-    ];
+      📋 STEP 1: Complete Your Profile
+      - Add transport rates for different distance ranges
+      - Set up your service areas (pincodes you deliver to)
+      - Configure working hours and days
 
-    const completedItems = checklist.filter(item => item.completed).length;
-    const requiredItems = checklist.filter(item => item.required).length;
-    const completedRequired = checklist.filter(item => item.required && item.completed).length;
+      🛍️ STEP 2: Add Your Products
+      - Choose your product categories
+      - Add product details (name, pricing, minimum quantities)
+      - Upload high-quality product images
+      - Set competitive prices
 
-    const progress = {
-      total: checklist.length,
-      completed: completedItems,
-      required: requiredItems,
-      completedRequired,
-      percentage: Math.round((completedItems / checklist.length) * 100),
-      requiredPercentage: Math.round((completedRequired / requiredItems) * 100),
-      canStartSelling: completedRequired === requiredItems
+      📊 STEP 3: Optimize Your Listings
+      - Write clear product descriptions
+      - Set appropriate minimum order quantities
+      - Configure delivery times accurately
+
+      🚚 STEP 4: Manage Orders
+      - Check for new orders regularly
+      - Update order status promptly
+      - Maintain good customer communication
+
+      💡 Tips for Success:
+      - Keep your inventory updated
+      - Respond to customer queries quickly
+      - Maintain competitive pricing
+      - Ensure timely deliveries
+
+      Login to your dashboard: [Dashboard Link]
+
+      Need assistance? Contact our support team at support@aggrekart.com
+
+      Best regards,
+      Aggrekart Team
+    `;
+
+    await sendEmail(supplier.email, subject, content);
+  }
+
+  static async sendProductSetupGuide(supplier, categories) {
+    const categoryGuides = {
+      aggregate: 'Dust, 10MM/20MM/40MM Metal, GSB, WMM, M.sand',
+      sand: 'River sand (Plastering), River sand',
+      tmt_steel: 'FE-415, FE-500, FE-550, FE-600 with various diameters',
+      bricks_blocks: 'Red Bricks, Fly Ash Bricks, Concrete Blocks, AAC Blocks',
+      cement: 'OPC (33/43/53 Grade), PPC'
     };
 
-    res.json({
-      success: true,
-      data: {
-        checklist,
-        progress
-      }
-    });
+    const selectedCategories = categories.map(cat => 
+      `${cat}: ${categoryGuides[cat] || 'Various products'}`
+    ).join('\n');
 
-  } catch (error) {
-    next(error);
+    const subject = 'Product Setup Guide - Your Selected Categories';
+    const content = `
+      Dear ${supplier.tradeOwnerName},
+
+      Great! You've selected the following product categories:
+
+      ${selectedCategories}
+
+      For each category, make sure to:
+
+      📝 Provide Accurate Information:
+      - Exact product specifications
+      - Current market prices
+      - Minimum order quantities
+      - Estimated delivery times
+
+      📸 Upload Quality Images:
+      - Clear, high-resolution photos
+      - Multiple angles if needed
+      - Proper lighting and background
+
+      💰 Competitive Pricing:
+      - Research local market rates
+      - Include all costs (material + transport)
+      - Update prices regularly
+
+      📦 Inventory Management:
+      - Keep stock quantities updated
+      - Set low-stock alerts
+      - Mark unavailable items as inactive
+
+      Ready to add your first product? Login to your dashboard and click "Add Product".
+
+      Best regards,
+      Aggrekart Team
+    `;
+
+    await sendEmail(supplier.email, subject, content);
   }
-});
 
-// @route   POST /api/supplier/onboarding/complete
-// @desc    Mark onboarding as complete
-// @access  Private (Supplier)
-router.post('/complete', auth, authorize('supplier'), async (req, res, next) => {
-  try {
-    const supplier = await Supplier.findOne({ user: req.user._id });
-    if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
-    }
-
-    if (!supplier.isApproved) {
-      return next(new ErrorHandler('Account must be approved first', 400));
-    }
-
-    const productCount = await Product.countDocuments({ supplier: supplier._id });
-    if (productCount === 0) {
-      return next(new ErrorHandler('Add at least one product to complete onboarding', 400));
-    }
-
-    // Mark onboarding as complete
-    supplier.onboardingStep = 'completed';
-    supplier.onboardingCompletedAt = new Date();
-    await supplier.save();
-
-    res.json({
-      success: true,
-      message: 'Onboarding completed successfully! You can now start receiving orders.',
-      data: {
-        supplier: {
-          supplierId: supplier.supplierId,
-          companyName: supplier.companyName,
-          onboardingStep: supplier.onboardingStep,
-          completedAt: supplier.onboardingCompletedAt
-        }
+  // Get onboarding status
+  static async getOnboardingStatus(supplierId) {
+    try {
+      const supplier = await Supplier.findById(supplierId).populate('user');
+      if (!supplier) {
+        throw new Error('Supplier not found');
       }
-    });
 
-  } catch (error) {
-    next(error);
+      const status = {
+        currentStep: supplier.onboardingStep || 'registration_pending',
+        isApproved: supplier.isApproved,
+        isActive: supplier.isActive,
+        documentsUploaded: supplier.documentsUploaded.length > 0,
+        profileComplete: this.isProfileComplete(supplier),
+        productsAdded: false, // Would check Product model
+        completionPercentage: 0
+      };
+
+      // Calculate completion percentage
+      let completed = 0;
+      const totalSteps = 5;
+
+      if (supplier.onboardingStep === 'registration_complete') completed++;
+      if (status.documentsUploaded) completed++;
+      if (supplier.isApproved) completed++;
+      if (status.profileComplete) completed++;
+      if (status.productsAdded) completed++;
+
+      status.completionPercentage = Math.round((completed / totalSteps) * 100);
+
+      return status;
+
+    } catch (error) {
+      throw new Error(`Failed to get onboarding status: ${error.message}`);
+    }
   }
-});
 
-// @route   GET /api/supplier/onboarding/guide
-// @desc    Get category-specific setup guides
-// @access  Private (Supplier)
-router.get('/guide', auth, authorize('supplier'), async (req, res, next) => {
-  try {
-    const supplier = await Supplier.findOne({ user: req.user._id });
-    if (!supplier) {
-      return next(new ErrorHandler('Supplier profile not found', 404));
-    }
-
-    const guides = {
-      aggregate: {
-        title: 'Aggregate Materials Setup',
-        description: 'Setting up aggregate products like stone chips, dust, and metals',
-        products: ['Dust', '10MM Metal', '20MM Metal', '40MM Metal', 'GSB', 'WMM', 'M.sand'],
-        tips: [
-          'Include royalty charges in your pricing',
-          'Set minimum quantities based on truck capacity',
-          'Update stock regularly as it depends on quarry supply',
-          'Mention grade and quality specifications'
-        ],
-        pricing: {
-          unit: 'MT (Metric Tons)',
-          typical_minimum: '2-5 MT',
-          factors: ['Material cost', 'Royalty charges', 'Transport cost', 'Loading charges']
-        }
-      },
-      sand: {
-        title: 'Sand Products Setup',
-        description: 'Setting up various types of sand for construction',
-        products: ['River Sand (Plastering)', 'River Sand', 'M.Sand'],
-        tips: [
-          'Specify sand type and source clearly',
-          'Include silt content information',
-          'Mention if sand is washed or unwashed',
-          'Transport cost varies significantly with distance'
-        ],
-        pricing: {
-          unit: 'MT (Metric Tons)',
-          typical_minimum: '5-10 MT',
-          factors: ['Material cost', 'Royalty charges', 'Transport cost', 'Loading charges']
-        }
-      },
-      tmt_steel: {
-        title: 'TMT Steel Setup',
-        description: 'Setting up TMT steel bars and rods',
-        products: ['FE-415', 'FE-500', 'FE-550', 'FE-600'],
-        variants: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm'],
-        tips: [
-          'Always mention the grade (FE-415, FE-500, etc.)',
-          'Specify diameter clearly',
-          'Include brand name for credibility',
-          'Pricing varies with market fluctuations',
-          'Minimum quantity usually 1 MT or more'
-        ],
-        pricing: {
-          unit: 'MT (Metric Tons)',
-          typical_minimum: '1-2 MT',
-          factors: ['Base steel price', 'Brand premium', 'Transport cost', 'Loading charges']
-        }
-      },
-      bricks_blocks: {
-        title: 'Bricks & Blocks Setup',
-        description: 'Setting up various types of bricks and blocks',
-        products: ['Red Bricks', 'Fly Ash Bricks', 'Concrete Blocks', 'AAC Blocks'],
-        tips: [
-          'Specify exact dimensions (L x W x H)',
-          'Mention strength/grade if applicable',
-          'Include brand for branded products',
-          'Pricing is usually per piece or per thousand',
-          'Consider transport costs for breakage'
-        ],
-        pricing: {
-          unit: 'Numbers (Per piece)',
-          typical_minimum: '1000 pieces',
-          factors: ['Manufacturing cost', 'Brand value', 'Transport cost', 'Loading charges']
-        }
-      },
-      cement: {
-        title: 'Cement Products Setup',
-        description: 'Setting up different types and grades of cement',
-        products: {
-          OPC: ['33 Grade', '43 Grade', '53 Grade'],
-          PPC: ['Various grades']
-        },
-        tips: [
-          'Always specify cement type (OPC/PPC)',
-          'Mention grade clearly (33/43/53)',
-          'Include brand name',
-          'Standard packaging is 50kg bags',
-          'Check expiry dates regularly'
-        ],
-        pricing: {
-          unit: 'Bags (50kg each)',
-          typical_minimum: '50-100 bags',
-          factors: ['Brand price', 'Transport cost', 'Loading charges', 'Storage cost']
-        }
-      }
-    };
-
-    // Return guides for supplier's selected categories
-    const supplierGuides = {};
-    supplier.categories.forEach(category => {
-      if (guides[category]) {
-        supplierGuides[category] = guides[category];
-      }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        guides: supplierGuides,
-        categories: supplier.categories,
-        generalTips: [
-          'Keep your pricing competitive but profitable',
-          'Update stock levels regularly',
-          'Respond to customer queries promptly',
-          'Maintain good delivery times',
-          'Upload clear product images',
-          'Write detailed product descriptions'
-        ]
-      }
-    });
-
-  } catch (error) {
-    next(error);
+  static isProfileComplete(supplier) {
+    return !!(
+      supplier.transportRates.upTo5km.costPerKm &&
+      supplier.transportRates.upTo10km.costPerKm &&
+      supplier.transportRates.upTo20km.costPerKm &&
+      supplier.transportRates.above20km.costPerKm &&
+      supplier.categories.length > 0
+    );
   }
-});
 
-module.exports = router;
+  // Send reminder emails for incomplete onboarding
+  static async sendOnboardingReminders() {
+    try {
+      const incompleteSuppliers = await Supplier.find({
+        isApproved: false,
+        rejectedAt: { $exists: false },
+        createdAt: { 
+          $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+          $lte: new Date(Date.now() - 24 * 60 * 60 * 1000) // More than 1 day ago
+        }
+      });
+
+      for (const supplier of incompleteSuppliers) {
+        const status = await this.getOnboardingStatus(supplier._id);
+        
+        if (status.completionPercentage < 100) {
+          await this.sendReminderEmail(supplier, status);
+        }
+      }
+
+      return {
+        success: true,
+        remindersSent: incompleteSuppliers.length
+      };
+
+    } catch (error) {
+      console.error('Failed to send onboarding reminders:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async sendReminderEmail(supplier, status) {
+    const subject = 'Complete Your Aggrekart Supplier Registration';
+    const content = `
+      Dear ${supplier.tradeOwnerName},
+
+      Your Aggrekart supplier registration is ${status.completionPercentage}% complete.
+
+      To start selling construction materials, please complete:
+
+      ${!status.documentsUploaded ? '□ Upload required documents' : '✓ Documents uploaded'}
+      ${!supplier.isApproved ? '□ Wait for admin approval' : '✓ Account approved'}
+      ${!status.profileComplete ? '□ Complete your profile setup' : '✓ Profile complete'}
+      ${!status.productsAdded ? '□ Add your first products' : '✓ Products added'}
+
+      Login to continue: [Dashboard Link]
+
+      Need help? Reply to this email or call our support team.
+
+      Best regards,
+      Aggrekart Team
+    `;
+
+    await sendEmail(supplier.email, subject, content);
+  }
+}
+
+module.exports = SupplierOnboarding;
