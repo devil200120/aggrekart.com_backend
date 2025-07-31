@@ -9,26 +9,12 @@ require('dotenv').config();
 
 const app = express();
 
-// 🔥 SECURE TRUST PROXY CONFIGURATION FOR RENDER
-// Instead of 'true', use specific trusted proxies for security
-if (process.env.NODE_ENV === 'development') {
-  // Render uses internal IP ranges - trust only these
-  app.set('trust proxy', ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', '127.0.0.1']);
-  console.log('✅ Trust proxy configured for Render production');
-} else {
-  // Development - trust loopback only
-  app.set('trust proxy', 'loopback');
-  console.log('✅ Trust proxy configured for development');
-}
+console.log('🚀 Starting Aggrekart Server...');
+console.log('📊 Environment:', process.env.NODE_ENV || 'development');
+console.log('🌐 Port:', process.env.PORT || 5000);
 
-// Environment validation
-console.log('🔍 Environment Check:');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('Trust Proxy:', app.get('trust proxy'));
-console.log('TWILIO_ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID ? 'SET' : 'MISSING');
-console.log('TWILIO_AUTH_TOKEN:', process.env.TWILIO_AUTH_TOKEN ? 'SET' : 'MISSING');
-console.log('TWILIO_PHONE_NUMBER:', process.env.TWILIO_PHONE_NUMBER);
-console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
+// Enhanced trust proxy configuration for Render
+app.set('trust proxy', true); // Trust all proxies in production
 
 // Security middleware
 app.use(helmet({
@@ -44,19 +30,17 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration
+// CORS configuration - PRODUCTION READY
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
-      'https://aggrekart-com.onrender.com',           // Your frontend URL
-      'https://aggrekart-com.onrender.com/',         // With trailing slash
-      'http://localhost:3000',                       // Development
-      'http://localhost:5173',                       // Vite dev server
-      'http://127.0.0.1:3000',                      // Alternative localhost
-      process.env.FRONTEND_URL                       // Environment variable
+      'https://aggrekart-com.onrender.com',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      process.env.FRONTEND_URL
     ].filter(Boolean);
     
     if (allowedOrigins.includes(origin)) {
@@ -85,108 +69,77 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// 🔥 SECURE RATE LIMITING with proper proxy configuration
+// Rate limiting with proper IP detection
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 200 : 1000,
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 1000 : 200,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  // 🔥 SECURE: Don't set trustProxy here, rely on app-level setting
-  keyGenerator: (req) => {
-    // Get the real client IP with fallbacks
-    const clientIP = req.ip || 
-                    req.connection?.remoteAddress || 
-                    req.socket?.remoteAddress ||
-                    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-                    req.headers['x-real-ip'] ||
-                    'unknown';
-    
-    console.log(`🔍 Rate limit key for IP: ${clientIP}`);
-    return clientIP;
-  },
   skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/api/health' || 
-           req.path === '/health' ||
-           req.path.startsWith('/favicon');
-  },
-  onLimitReached: (req, res) => {
-    console.log(`🚨 Rate limit reached for IP: ${req.ip}, Path: ${req.path}`);
+    return req.path === '/api/health' || req.path === '/health';
   }
 });
-
 app.use('/api/', limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Enhanced logging with IP information
+// Logging
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('combined'));
+  app.use(morgan('dev'));
 } else {
-  app.use(morgan(':remote-addr :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'));
+  app.use(morgan('combined'));
 }
 
-// Request debugging middleware
-app.use((req, res, next) => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`🌐 ${req.method} ${req.path} from IP: ${req.ip}`);
-  }
-  next();
+// Database connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aggrekart', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => {
+  console.log('✅ MongoDB connected successfully');
+  console.log(`📊 Database: ${mongoose.connection.name}`);
+})
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+  process.exit(1);
 });
 
-// Database connection
-const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
-    process.exit(1);
-  }
-};
-
-// Connect to database
-connectDB();
-
-// Test notification functions during startup
-(async () => {
-  try {
-    const { testNotificationServices } = require('./utils/notifications');
-    const status = await testNotificationServices();
-    console.log('📊 Notification Services Status:', status);
-  } catch (error) {
-    console.error('❌ Notification service test failed:', error.message);
-  }
-})();
-
-// Health check endpoint (before routes)
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'Server is healthy',
+    status: 'OK',
+    message: 'Aggrekart server is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV,
-    server: {
-      trustProxy: app.get('trust proxy'),
-      clientIP: req.ip,
-      headers: {
-        'x-forwarded-for': req.headers['x-forwarded-for'],
-        'x-real-ip': req.headers['x-real-ip']
-      }
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    success: true,
+    status: 'OK', 
+    message: 'Aggrekart API is running',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    cors: {
+      allowedOrigins: [
+        'https://aggrekart-com.onrender.com',
+        'http://localhost:3000',
+        process.env.FRONTEND_URL
+      ].filter(Boolean)
     }
   });
 });
 
-// Routes
+// API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/products', require('./routes/products'));
@@ -201,68 +154,42 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
-app.use('/api/gst', require('./routes/gst'));
 
-// Enhanced API health check
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
+// FIXED: Use only one GST route - choose the working one
+if (process.env.NODE_ENV === 'production') {
+  app.use('/api/gst', require('./routes/gst-fixed')); // Use fallback in production
+} else {
+  app.use('/api/gst', require('./routes/gst')); // Use full API in development
+}
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
     success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV,
-    server: {
-      trustProxy: app.get('trust proxy'),
-      clientIP: req.ip,
-      userAgent: req.headers['user-agent']
-    },
-    services: {
-      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      notifications: {
-        sms: !!process.env.TWILIO_ACCOUNT_SID,
-        email: !!process.env.SMTP_EMAIL
-      }
-    }
-  });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found',
-    path: req.originalUrl,
-    method: req.method,
+    message: 'Welcome to Aggrekart API',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
   });
 });
 
-// Global error handler (must be last)
+// Global error handling middleware
 app.use(globalErrorHandler);
 
-// Start server
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔗 API base: http://localhost:${PORT}/api`);
-  console.log(`📡 Trust proxy: ${app.get('trust proxy')}`);
+app.listen(PORT, () => {
+  console.log(`✅ Server is running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📡 Health check: http://localhost:${PORT}/health`);
+  
+  // Log environment variable status
+  console.log('\n📋 Environment Variables Check:');
+  console.log('├── MONGODB_URI:', process.env.MONGODB_URI ? '✅ Set' : '❌ Missing');
+  console.log('├── TWILIO_ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID ? '✅ Set' : '❌ Missing');
+  console.log('├── TWILIO_AUTH_TOKEN:', process.env.TWILIO_AUTH_TOKEN ? '✅ Set' : '❌ Missing');
+  console.log('├── TWILIO_PHONE_NUMBER:', process.env.TWILIO_PHONE_NUMBER ? '✅ Set' : '❌ Missing');
+  console.log('├── JWT_SECRET:', process.env.JWT_SECRET ? '✅ Set' : '❌ Missing');
+  console.log('├── MASTERS_INDIA_USERNAME:', process.env.MASTERS_INDIA_USERNAME ? '✅ Set' : '❌ Missing');
+  console.log('├── CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME ? '✅ Set' : '❌ Missing');
+  console.log('└── NODE_ENV:', process.env.NODE_ENV || 'development (default)');
 });
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('👋 SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('💤 Process terminated');
-    mongoose.connection.close();
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('👋 SIGINT received, shutting down gracefully');
-  server.close(() => {
-    console.log('💤 Process terminated');
-    mongoose.connection.close();
-  });
-});
-
-module.exports = app;
