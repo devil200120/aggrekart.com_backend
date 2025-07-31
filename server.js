@@ -11,7 +11,7 @@ const app = express();
 
 // CRITICAL FIX: Trust proxy configuration for Render.com
 // Render.com uses proxy headers, so we need to trust the first proxy
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'development') {
   app.set('trust proxy', 1); // Trust first proxy (Render.com's load balancer)
 } else {
   app.set('trust proxy', false); // Don't trust proxy in development
