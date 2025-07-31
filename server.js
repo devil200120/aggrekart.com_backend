@@ -55,6 +55,7 @@ app.use('/api/payments', safeRequire('./routes/payments'));
 app.use('/api/suppliers', safeRequire('./routes/suppliers'));
 app.use('/api/admin', safeRequire('./routes/admin'));
 app.use('/api/gst', safeRequire('./routes/gst'));
+app.use('/api/gst', require('./routes/gst'));
 
 // GST verification endpoint
 app.post('/api/gst/verify', (req, res) => {
