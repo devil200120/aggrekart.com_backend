@@ -8,22 +8,25 @@ const {
 
 // Add debugging middleware
 router.use((req, res, next) => {
-  console.log(`🌐 [GST Route] ${req.method} ${req.path}`, req.body);
+  console.log(`🌐 [GST Route] ${new Date().toISOString()} ${req.method} ${req.path}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log('📥 Request body:', req.body);
+  }
   next();
 });
 
 // @route   POST /api/gst/verify
-// @desc    Verify GST number and get business details - REAL DATA ONLY
+// @desc    Verify GST number and get business details using Masters India API
 // @access  Public
 router.post('/verify', async (req, res) => {
-  console.log('🚀 Starting GST verification route...');
+  console.log('🚀 [GST Verify] Starting verification process...');
   
   try {
     const { gstNumber } = req.body;
-    console.log('📥 GST verification request received:', { gstNumber });
-
+    
+    // Validate input
     if (!gstNumber) {
-      console.log('❌ Missing GST number');
+      console.log('❌ [GST Verify] Missing GST number in request');
       return res.status(400).json({
         success: false,
         error: 'MISSING_GST_NUMBER',
@@ -32,154 +35,125 @@ router.post('/verify', async (req, res) => {
     }
 
     const cleanGST = gstNumber.replace(/\s/g, '').toUpperCase();
-    console.log('🧹 Cleaned GST:', cleanGST);
+    console.log('🔍 [GST Verify] Processing GST:', cleanGST);
     
+    // Validate GST format
     if (!validateGSTNumber(cleanGST)) {
-      console.log('❌ Invalid GST format');
+      console.log('❌ [GST Verify] Invalid GST format:', cleanGST);
       return res.status(400).json({
         success: false,
         error: 'INVALID_GST_FORMAT',
-        message: 'Invalid GST number format. Please enter a valid 15-digit GST number.'
+        message: 'Invalid GST number format. Please enter a valid 15-digit GST number.',
+        providedGST: cleanGST
       });
     }
 
-    console.log('🔍 Processing GST verification for:', cleanGST);
-
-    // This will throw an error if GST is not found or API fails
-    const gstDetails = await getGSTDetails(cleanGST);
-    console.log('📊 GST details received:', {
-      gstNumber: gstDetails.gstNumber,
-      businessName: gstDetails.businessName,
-      isFallback: gstDetails.isFallback
-    });
-
-    const responseData = {
-      success: true,
-      message: 'GST number verified successfully',
-      data: {
-        gstDetails,
-        verifiedAt: new Date().toISOString(),
-        apiProvider: gstDetails.apiProvider || 'Masters India'
-      }
-    };
-
-    console.log('✅ Sending successful response');
-    return res.status(200).json(responseData);
-
-  } catch (error) {
-    console.error('❌ GST verification error in route:', error);
+    console.log('📡 [GST Verify] Calling Masters India API...');
     
-    // Determine error type and return appropriate status
-    let statusCode = 500;
-    let errorCode = 'VERIFICATION_FAILED';
+    // Call the GST API
+    const result = await getGSTDetails(cleanGST);
     
-    if (error.message.includes('not found')) {
-      statusCode = 404;
-      errorCode = 'GST_NOT_FOUND';
-    } else if (error.message.includes('Authentication failed')) {
-      statusCode = 503;
-      errorCode = 'API_AUTHENTICATION_FAILED';
-    } else if (error.message.includes('Network error')) {
-      statusCode = 503;
-      errorCode = 'NETWORK_ERROR';
-    } else if (error.message.includes('Invalid GST')) {
-      statusCode = 400;
-      errorCode = 'INVALID_GST_FORMAT';
+    if (result.success) {
+      console.log('✅ [GST Verify] Successfully retrieved GST details');
+      return res.json({
+        success: true,
+        message: 'GST details retrieved successfully',
+        data: result.data,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log('❌ [GST Verify] GST API call failed:', result.error);
+      
+      // Handle different error types
+      const statusCode = result.error === 'GST_NOT_FOUND' ? 404 : 
+                        result.error === 'INVALID_GST_FORMAT' ? 400 :
+                        result.error === 'AUTHENTICATION_FAILED' ? 401 : 500;
+      
+      return res.status(statusCode).json({
+        success: false,
+        error: result.error,
+        message: result.message,
+        gstNumber: cleanGST,
+        timestamp: new Date().toISOString(),
+        details: process.env.NODE_ENV === 'development' ? result.details : undefined
+      });
     }
 
-    const errorResponse = {
+  } catch (error) {
+    console.error('💥 [GST Verify] Unexpected error:', error);
+    return res.status(500).json({
       success: false,
-      error: errorCode,
-      message: error.message,
-      timestamp: new Date().toISOString()
-    };
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred while processing GST verification',
+      timestamp: new Date().toISOString(),
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
 
-    console.log('❌ Sending error response:', errorResponse);
-    return res.status(statusCode).json(errorResponse);
+// @route   GET /api/gst/validate/:gstNumber
+// @desc    Quick GST format validation
+// @access  Public
+router.get('/validate/:gstNumber', (req, res) => {
+  try {
+    const { gstNumber } = req.params;
+    const cleanGST = gstNumber.replace(/\s/g, '').toUpperCase();
+    const isValid = validateGSTNumber(cleanGST);
+    
+    console.log(`🔍 [GST Validate] ${cleanGST} -> ${isValid ? 'VALID' : 'INVALID'}`);
+    
+    res.json({
+      success: true,
+      gstNumber: cleanGST,
+      isValid,
+      message: isValid ? 'GST number format is valid' : 'GST number format is invalid'
+    });
+  } catch (error) {
+    console.error('💥 [GST Validate] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Error validating GST number format'
+    });
   }
 });
 
 // @route   GET /api/gst/test
-// @desc    Test GST API connectivity
-// @access  Public
+// @desc    Test Masters India API connectivity
+// @access  Public (for debugging)
 router.get('/test', async (req, res) => {
+  console.log('🧪 [GST Test] Testing API connectivity...');
+  
   try {
-    console.log('🧪 Testing GST API connectivity...');
-    const connectivityResult = await testAPIConnectivity();
+    const result = await testAPIConnectivity();
     
-    const statusCode = connectivityResult.isReachable ? 200 : 503;
-    
-    return res.status(statusCode).json({
-      success: connectivityResult.isReachable,
-      message: 'GST API connectivity test completed',
-      data: {
-        connectivity: connectivityResult,
-        timestamp: new Date().toISOString()
-      }
+    const statusCode = result.success ? 200 : 503;
+    res.status(statusCode).json({
+      ...result,
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development'
     });
-
   } catch (error) {
-    console.error('❌ GST test failed:', error);
-    return res.status(500).json({
+    console.error('💥 [GST Test] Error:', error);
+    res.status(500).json({
       success: false,
-      error: 'TEST_FAILED',
-      message: 'GST API test failed',
-      details: error.message
+      message: 'API connectivity test failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
 
-// @route   GET /api/gst/search/:gstin
-// @desc    Direct GST search endpoint for testing
+// @route   GET /api/gst/health
+// @desc    Health check for GST service
 // @access  Public
-router.get('/search/:gstin', async (req, res) => {
-  try {
-    const { gstin } = req.params;
-    
-    if (!validateGSTNumber(gstin)) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_GST_FORMAT',
-        message: 'Invalid GST number format'
-      });
-    }
-
-    console.log('🔍 Direct GST search for:', gstin);
-    const gstDetails = await getGSTDetails(gstin);
-
-    return res.status(200).json({
-      success: true,
-      message: 'GST search completed',
-      data: {
-        gstDetails,
-        searchedAt: new Date().toISOString()
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ GST search failed:', error);
-    
-    let statusCode = 500;
-    if (error.message.includes('not found')) {
-      statusCode = 404;
-    } else if (error.message.includes('Authentication failed')) {
-      statusCode = 503;
-    }
-    
-    return res.status(statusCode).json({
-      success: false,
-      error: 'SEARCH_FAILED',
-      message: error.message
-    });
-  }
-});
-
-// Health check for GST routes
 router.get('/health', (req, res) => {
   res.json({
     success: true,
-    message: 'GST routes are working',
-    timestamp: new Date().toISOString()
+    service: 'GST Verification Service',
+    status: 'operational',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0'
   });
 });
 
