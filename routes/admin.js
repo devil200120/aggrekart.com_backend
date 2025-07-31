@@ -1229,7 +1229,611 @@ router.get('/orders', auth, authorize('admin'), [
     next(error);
   }
 });
+// Add these routes after the existing GET /api/admin/orders route (around line 1230)
 
+// @route   GET /api/admin/orders/:orderId
+// @desc    Get specific order details for admin
+// @access  Private (Admin)
+router.get('/orders/:orderId', auth, authorize('admin'), [
+  param('orderId').isMongoId().withMessage('Valid order ID is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate('customer', 'name email phoneNumber customerId')
+      .populate('supplier', 'companyName supplierId contactPersonName email phoneNumber')
+      .populate('items.product', 'name category brand hsnCode')
+      .lean();
+
+    if (!order) {
+      return next(new ErrorHandler('Order not found', 404));
+    }
+
+    res.json({
+      success: true,
+      data: { order }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/admin/orders/:orderId/status
+// @desc    Update order status by admin
+// @access  Private (Admin)
+// REPLACE the existing PUT /orders/:orderId/status route with this enhanced version
+
+// @route   PUT /api/admin/orders/:orderId/status
+// @desc    Update order status by admin with notifications
+// @access  Private (Admin)
+router.put('/orders/:orderId/status', auth, authorize('admin'), [
+  param('orderId').isMongoId().withMessage('Valid order ID is required'),
+  body('status').isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'])
+    .withMessage('Invalid status value'),
+  body('notes').optional().trim().isLength({ max: 500 })
+    .withMessage('Notes cannot exceed 500 characters')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId } = req.params;
+    const { status, notes } = req.body;
+
+    console.log(`🔄 Admin updating order ${orderId} status to ${status}`);
+
+    const order = await Order.findById(orderId)
+      .populate('customer', 'name email phoneNumber customerId')
+      .populate('supplier', 'companyName email phoneNumber contactPersonName contactPersonNumber');
+
+    if (!order) {
+      return next(new ErrorHandler('Order not found', 404));
+    }
+
+    // Validate status transition
+    const validTransitions = {
+      pending: ['confirmed', 'cancelled'],
+      confirmed: ['processing', 'cancelled'],
+      processing: ['shipped', 'cancelled'],
+      shipped: ['delivered', 'cancelled'],
+      delivered: ['refunded'],
+      cancelled: [],
+      refunded: []
+    };
+
+    if (!validTransitions[order.status].includes(status) && order.status !== status) {
+      return next(new ErrorHandler(
+        `Cannot change status from ${order.status} to ${status}`, 
+        400
+      ));
+    }
+
+    // Update order status
+    const oldStatus = order.status;
+    order.status = status;
+    order.updatedAt = new Date();
+
+    // Add status change to history
+    if (!order.statusHistory) {
+      order.statusHistory = [];
+    }
+
+    order.statusHistory.push({
+      status: status,
+      timestamp: new Date(),
+      updatedBy: req.user._id,
+      notes: notes,
+      userType: 'admin'
+    });
+
+    // Set specific timestamps based on status
+    switch (status) {
+      case 'confirmed':
+        order.confirmedAt = new Date();
+        break;
+      case 'processing':
+        order.processingAt = new Date();
+        break;
+      case 'shipped':
+        order.shippedAt = new Date();
+        break;
+      case 'delivered':
+        order.deliveredAt = new Date();
+        break;
+      case 'cancelled':
+        order.cancelledAt = new Date();
+        order.cancellationReason = notes || 'Cancelled by admin';
+        break;
+    }
+
+    await order.save();
+
+    console.log(`✅ Order ${orderId} status updated from ${oldStatus} to ${status}`);
+
+    // 🚀 SEND NOTIFICATIONS TO CUSTOMER AND SUPPLIER
+    
+
+    res.json({
+      success: true,
+      message: `Order status updated to ${status}`,
+      data: {
+        order: {
+          _id: order._id,
+          orderId: order.orderId,
+          status: order.status,
+          updatedAt: order.updatedAt
+        }
+      }
+    });
+    setImmediate(async () => {
+      try {
+        console.log(`📬 Sending async notifications for order ${order.orderId}`);
+        await sendOrderConfirmationNotifications(order, status, notes);
+        console.log(`✅ Notifications sent for order ${order.orderId}`);
+      } catch (notificationError) {
+        console.error(`❌ Async notification failed for order ${order.orderId}:`, notificationError);
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating order status:', error);
+    next(error);
+  }
+});
+
+// Enhanced notification function for order status changes
+const sendOrderConfirmationNotifications = async (order, newStatus, notes = '') => {
+  try {
+    console.log(`📬 Sending notifications for order ${order.orderId} status: ${newStatus}`);
+
+    const customer = order.customer;
+    const supplier = order.supplier;
+    
+    // Format currency
+    const formatCurrency = (amount) => {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    };
+
+    const orderTotal = formatCurrency(order.pricing?.totalAmount || 0);
+    const itemCount = order.items?.length || 0;
+
+    // Define notification content for each status
+    const notificationTemplates = {
+      confirmed: {
+        customer: {
+          email: {
+            subject: `🎉 Order Confirmed - ${order.orderId}`,
+            content: `
+Dear ${customer.name},
+
+Great news! Your order has been confirmed and is being prepared for delivery.
+
+📋 ORDER DETAILS:
+• Order ID: ${order.orderId}
+• Total Amount: ${orderTotal}
+• Items: ${itemCount} item(s)
+• Status: Confirmed
+• Estimated Delivery: 2-3 business days
+
+📦 WHAT'S NEXT:
+✓ Your order is now being prepared
+✓ You'll receive updates as your order progresses
+✓ Track your order anytime on our website
+
+${notes ? `📝 Note from admin: ${notes}` : ''}
+
+Thank you for choosing Aggrekart for your construction needs!
+
+Best regards,
+Team Aggrekart
+🏗️ Building Dreams, Delivering Quality
+            `
+          },
+          sms: `🎉 Order ${order.orderId} CONFIRMED! Total: ${orderTotal}. Your ${itemCount} item(s) are being prepared. Track: aggrekart.com/orders. Expected delivery: 2-3 days. Thank you! - Aggrekart`
+        },
+        supplier: {
+          email: {
+            subject: `📋 New Order Confirmed - ${order.orderId}`,
+            content: `
+Dear ${supplier.contactPersonName || 'Partner'},
+
+A new order has been confirmed and assigned to you.
+
+📋 ORDER DETAILS:
+• Order ID: ${order.orderId}
+• Customer: ${customer.name}
+• Total Amount: ${orderTotal}
+• Items: ${itemCount} item(s)
+• Status: Confirmed
+
+📦 ACTION REQUIRED:
+• Prepare items for dispatch
+• Update stock levels
+• Coordinate with delivery team
+
+Please ensure timely preparation and quality packaging.
+
+Best regards,
+Team Aggrekart
+🏗️ Building Dreams, Delivering Quality
+            `
+          },
+          sms: `📋 New order ${order.orderId} confirmed! Customer: ${customer.name}. Amount: ${orderTotal}. Please prepare ${itemCount} item(s). Login to dashboard for details. - Aggrekart`
+        }
+      },
+      processing: {
+        customer: {
+          email: {
+            subject: `📦 Order Processing - ${order.orderId}`,
+            content: `
+Dear ${customer.name},
+
+Your order is now being processed and will be dispatched soon!
+
+📋 ORDER STATUS:
+• Order ID: ${order.orderId}
+• Status: Processing
+• Expected Dispatch: Within 24 hours
+• Total Amount: ${orderTotal}
+
+We're working hard to get your order ready for delivery.
+
+${notes ? `📝 Update: ${notes}` : ''}
+
+Best regards,
+Team Aggrekart
+            `
+          },
+          sms: `📦 Order ${order.orderId} is being processed! Expected dispatch within 24 hours. Track: aggrekart.com/orders - Aggrekart`
+        }
+      },
+      shipped: {
+        customer: {
+          email: {
+            subject: `🚛 Order Shipped - ${order.orderId}`,
+            content: `
+Dear ${customer.name},
+
+Exciting news! Your order has been shipped and is on its way to you.
+
+📋 SHIPPING DETAILS:
+• Order ID: ${order.orderId}
+• Status: Shipped
+• Expected Delivery: 1-2 business days
+• Total Amount: ${orderTotal}
+
+You'll receive delivery updates and tracking information soon.
+
+${notes ? `📝 Shipping note: ${notes}` : ''}
+
+Best regards,
+Team Aggrekart
+            `
+          },
+          sms: `🚛 Order ${order.orderId} SHIPPED! Expected delivery in 1-2 days. You'll receive tracking info soon. - Aggrekart`
+        }
+      },
+      delivered: {
+        customer: {
+          email: {
+            subject: `✅ Order Delivered - ${order.orderId}`,
+            content: `
+Dear ${customer.name},
+
+Your order has been successfully delivered! We hope you're satisfied with your purchase.
+
+📋 DELIVERY CONFIRMATION:
+• Order ID: ${order.orderId}
+• Status: Delivered
+• Total Amount: ${orderTotal}
+• Delivered on: ${new Date().toLocaleDateString('en-IN')}
+
+🌟 We'd love your feedback! Please rate your experience and help us serve you better.
+
+Thank you for choosing Aggrekart!
+
+Best regards,
+Team Aggrekart
+            `
+          },
+          sms: `✅ Order ${order.orderId} DELIVERED! Thank you for choosing Aggrekart. Please rate your experience: aggrekart.com/feedback`
+        }
+      },
+      cancelled: {
+        customer: {
+          email: {
+            subject: `❌ Order Cancelled - ${order.orderId}`,
+            content: `
+Dear ${customer.name},
+
+We regret to inform you that your order has been cancelled.
+
+📋 CANCELLATION DETAILS:
+• Order ID: ${order.orderId}
+• Status: Cancelled
+• Total Amount: ${orderTotal}
+• Reason: ${notes || 'As requested'}
+
+💰 REFUND INFORMATION:
+Your refund of ${orderTotal} will be processed within 3-5 business days to your original payment method.
+
+We apologize for any inconvenience caused. Feel free to place a new order anytime.
+
+Best regards,
+Team Aggrekart
+            `
+          },
+          sms: `❌ Order ${order.orderId} cancelled. Refund of ${orderTotal} will be processed in 3-5 days. Contact us for assistance: aggrekart.com/support`
+        }
+      }
+    };
+
+    const templates = notificationTemplates[newStatus];
+    
+    if (!templates) {
+      console.log(`No notification templates found for status: ${newStatus}`);
+      return;
+    }
+
+    const notifications = [];
+
+    // Send customer notifications
+    if (templates.customer) {
+      // Email notification
+      if (customer.email && templates.customer.email) {
+        try {
+          const { sendEmail } = require('../utils/notifications');
+          await sendEmail(
+            customer.email,
+            templates.customer.email.subject,
+            templates.customer.email.content,
+            'order_update'
+          );
+          notifications.push({ type: 'customer_email', status: 'sent' });
+          console.log(`✅ Email sent to customer: ${customer.email}`);
+        } catch (error) {
+          console.error(`❌ Failed to send email to customer:`, error);
+          notifications.push({ type: 'customer_email', status: 'failed', error: error.message });
+        }
+      }
+
+      // SMS notification
+      if (customer.phoneNumber && templates.customer.sms) {
+        try {
+          const { sendSMS } = require('../utils/notifications');
+          await sendSMS(customer.phoneNumber, templates.customer.sms);
+          notifications.push({ type: 'customer_sms', status: 'sent' });
+          console.log(`✅ SMS sent to customer: ${customer.phoneNumber}`);
+        } catch (error) {
+          console.error(`❌ Failed to send SMS to customer:`, error);
+          notifications.push({ type: 'customer_sms', status: 'failed', error: error.message });
+        }
+      }
+    }
+
+    // Send supplier notifications
+    if (templates.supplier && supplier) {
+      // Email notification
+      if (supplier.email && templates.supplier.email) {
+        try {
+          const { sendEmail } = require('../utils/notifications');
+          await sendEmail(
+            supplier.email,
+            templates.supplier.email.subject,
+            templates.supplier.email.content,
+            'order_update'
+          );
+          notifications.push({ type: 'supplier_email', status: 'sent' });
+          console.log(`✅ Email sent to supplier: ${supplier.email}`);
+        } catch (error) {
+          console.error(`❌ Failed to send email to supplier:`, error);
+          notifications.push({ type: 'supplier_email', status: 'failed', error: error.message });
+        }
+      }
+
+      // SMS notification
+      if (supplier.contactPersonNumber && templates.supplier.sms) {
+        try {
+          const { sendSMS } = require('../utils/notifications');
+          await sendSMS(supplier.contactPersonNumber, templates.supplier.sms);
+          notifications.push({ type: 'supplier_sms', status: 'sent' });
+          console.log(`✅ SMS sent to supplier: ${supplier.contactPersonNumber}`);
+        } catch (error) {
+          console.error(`❌ Failed to send SMS to supplier:`, error);
+          notifications.push({ type: 'supplier_sms', status: 'failed', error: error.message });
+        }
+      }
+    }
+
+    console.log(`📬 Notification summary for order ${order.orderId}:`, notifications);
+    return notifications;
+
+  } catch (error) {
+    console.error('❌ Error in sendOrderConfirmationNotifications:', error);
+    throw error;
+  }
+};
+// @route   PUT /api/admin/orders/:orderId/refund
+// @desc    Process order refund by admin
+// @access  Private (Admin)
+router.put('/orders/:orderId/refund', auth, authorize('admin'), [
+  param('orderId').isMongoId().withMessage('Valid order ID is required'),
+  body('reason').trim().isLength({ min: 5, max: 500 })
+    .withMessage('Refund reason must be 5-500 characters'),
+  body('amount').optional().isFloat({ min: 0 })
+    .withMessage('Refund amount must be positive'),
+  body('refundMethod').optional().isIn(['original', 'bank_transfer', 'wallet'])
+    .withMessage('Invalid refund method')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId } = req.params;
+    const { reason, amount, refundMethod = 'original' } = req.body;
+
+    console.log(`💰 Admin processing refund for order ${orderId}`);
+
+    const order = await Order.findById(orderId)
+      .populate('customer', 'name email');
+
+    if (!order) {
+      return next(new ErrorHandler('Order not found', 404));
+    }
+
+    if (!['delivered', 'processing', 'shipped'].includes(order.status)) {
+      return next(new ErrorHandler('Order cannot be refunded in current status', 400));
+    }
+
+    const refundAmount = amount || order.pricing.totalAmount;
+
+    // Update order for refund
+    order.status = 'refunded';
+    order.refundDetails = {
+      amount: refundAmount,
+      reason: reason,
+      method: refundMethod,
+      processedBy: req.user._id,
+      processedAt: new Date(),
+      refundId: `REF_${Date.now()}`
+    };
+
+    // Add to status history
+    if (!order.statusHistory) {
+      order.statusHistory = [];
+    }
+
+    order.statusHistory.push({
+      status: 'refunded',
+      timestamp: new Date(),
+      updatedBy: req.user._id,
+      notes: `Refund processed: ${reason}`,
+      userType: 'admin'
+    });
+
+    await order.save();
+
+    console.log(`✅ Refund processed for order ${orderId}: ₹${refundAmount}`);
+
+    // Here you would integrate with payment gateway for actual refund
+    // For now, we'll just log the refund
+
+    res.json({
+      success: true,
+      message: 'Refund processed successfully',
+      data: {
+        refund: {
+          orderId: order.orderId,
+          amount: refundAmount,
+          refundId: order.refundDetails.refundId,
+          processedAt: order.refundDetails.processedAt
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error processing refund:', error);
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/orders/:orderId/timeline
+// @desc    Get order status timeline for admin
+// @access  Private (Admin)
+router.get('/orders/:orderId/timeline', auth, authorize('admin'), [
+  param('orderId').isMongoId().withMessage('Valid order ID is required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate('statusHistory.updatedBy', 'name role')
+      .select('orderId status statusHistory createdAt confirmedAt processingAt shippedAt deliveredAt cancelledAt');
+
+    if (!order) {
+      return next(new ErrorHandler('Order not found', 404));
+    }
+
+    // Build timeline from status history and timestamps
+    let timeline = [];
+
+    // Add creation
+    timeline.push({
+      status: 'created',
+      timestamp: order.createdAt,
+      title: 'Order Placed',
+      description: 'Order was successfully placed',
+      type: 'system'
+    });
+
+    // Add status history
+    if (order.statusHistory && order.statusHistory.length > 0) {
+      order.statusHistory.forEach(entry => {
+        timeline.push({
+          status: entry.status,
+          timestamp: entry.timestamp,
+          title: entry.status.charAt(0).toUpperCase() + entry.status.slice(1),
+          description: entry.notes || `Order status changed to ${entry.status}`,
+          updatedBy: entry.updatedBy,
+          userType: entry.userType,
+          type: 'status_change'
+        });
+      });
+    }
+
+    // Sort timeline by timestamp
+    timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    res.json({
+      success: true,
+      data: {
+        orderId: order.orderId,
+        currentStatus: order.status,
+        timeline
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 // @route   GET /api/admin/users/:userId
 // @desc    Get detailed user information
 // @access  Private (Admin)
