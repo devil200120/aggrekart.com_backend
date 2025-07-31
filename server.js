@@ -186,7 +186,7 @@ app.use('/api/reports', require('./routes/reports'));
 
 // Add this line with your other route registrations:
 app.use('/api/gst', require('./routes/gst'));
-app.use('/api/gst', require('./routes/gst-fixed'));
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
