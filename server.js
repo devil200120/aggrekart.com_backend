@@ -34,7 +34,7 @@ app.use(helmet({
 const corsOptions = {
   origin: function (origin, callback) {
     // In production, be more permissive for deployment debugging
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'development') {
       // Allow Render URLs and common patterns
       const renderPatterns = [
         /^https:\/\/.*\.onrender\.com$/,
@@ -125,7 +125,7 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   
   // Set CORS headers for Render deployment
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'development') {
     if (origin && (origin.includes('.onrender.com') || origin === process.env.FRONTEND_URL)) {
       res.header('Access-Control-Allow-Origin', origin);
     }
@@ -242,12 +242,12 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/gst', require('./routes/gst'));
 
 // Catch-all route for frontend (if serving static files)
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'development') {
   app.get('*', (req, res) => {
     res.status(200).json({
       message: 'Aggrekart API Server',
       timestamp: new Date().toISOString(),
-      environment: 'production'
+      environment: 'development'
     });
   });
 }
