@@ -1,11 +1,11 @@
 const axios = require('axios');
 
-// Masters India API Configuration
+// Masters India API Configuration - CORRECTED FROM POSTMAN
 const MASTERS_INDIA_CONFIG = {
   baseURL: 'https://commonapi.mastersindia.co',
   username: process.env.MASTERS_INDIA_USERNAME || 'aggrekart.com@gmail.com',
   password: process.env.MASTERS_INDIA_PASSWORD || 'Masters@1234567',
-  client_id: process.env.MASTERS_INDIA_CLIENT_ID || 'rUFnqFmbkIeWzLIgRz',
+  client_id: process.env.MASTERS_INDIA_CLIENT_ID || 'JapKhzIHwAVpIxgYjB', // CORRECTED FROM POSTMAN
   client_secret: process.env.MASTERS_INDIA_CLIENT_SECRET || 'djFxym5GGgDbUj3mu0f8Nx9v'
 };
 
@@ -30,7 +30,7 @@ const validateGSTNumber = (gstNumber) => {
   return gstRegex.test(cleaned);
 };
 
-// Step 1: Authenticate and get access token
+// Step 1: Authenticate and get access token - FIXED
 const authenticateAPI = async () => {
   debugLog('🔐 Starting authentication with Masters India API...');
   
@@ -43,17 +43,29 @@ const authenticateAPI = async () => {
       grant_type: 'password'
     };
     
+    debugLog('📤 Auth request data:', {
+      username: MASTERS_INDIA_CONFIG.username,
+      client_id: MASTERS_INDIA_CONFIG.client_id,
+      grant_type: 'password'
+    });
+    
     const response = await axios({
       method: 'POST',
       url: `${MASTERS_INDIA_CONFIG.baseURL}/oauth/access_token`,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'client_id':''
-
+        'client_id': MASTERS_INDIA_CONFIG.client_id // FIXED: Added correct client_id
       },
       data: requestData,
       timeout: 30000
+    });
+    
+    debugLog('📥 Auth response:', {
+      status: response.status,
+      hasAccessToken: !!response.data?.access_token,
+      tokenType: response.data?.token_type,
+      expiresIn: response.data?.expires_in
     });
     
     if (response.status === 200 && response.data && response.data.access_token) {
@@ -62,14 +74,14 @@ const authenticateAPI = async () => {
         success: true,
         accessToken: response.data.access_token,
         expiresIn: response.data.expires_in,
-        tokenType: response.data.token_type
+        tokenType: response.data.token_type || 'Bearer'
       };
     } else {
-      debugLog('❌ Authentication failed', response.data);
+      debugLog('❌ Authentication failed - no access token', response.data);
       return {
         success: false,
-        error: 'Authentication failed',
-        message: 'No access token received'
+        error: 'AUTHENTICATION_FAILED',
+        message: 'No access token received from API'
       };
     }
     
@@ -77,58 +89,78 @@ const authenticateAPI = async () => {
     debugLog('❌ Authentication error', { 
       message: error.message,
       status: error.response?.status,
+      statusText: error.response?.statusText,
       data: error.response?.data
     });
     return {
       success: false,
-      error: error.message,
-      responseData: error.response?.data
+      error: 'AUTH_REQUEST_FAILED',
+      message: error.message,
+      details: error.response?.data
     };
   }
 };
 
-// Step 2: Search GST details using official API
+// Step 2: Search GST details using CORRECT headers from Postman
 const searchGSTDetails = async (gstNumber, accessToken) => {
   debugLog('🔍 Searching GST details for:', gstNumber);
   
   try {
     const cleanGST = gstNumber.replace(/\s/g, '').toUpperCase();
     
+    // Headers EXACTLY as shown in Postman screenshot
+    const headers = {
+      'Authorization': `Bearer ${accessToken}`,
+      'client_id': MASTERS_INDIA_CONFIG.client_id,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+    
+    debugLog('📤 Request headers:', headers);
+    debugLog('📤 Request URL:', `${MASTERS_INDIA_CONFIG.baseURL}/commonapis/searchgstin?gstin=${cleanGST}`);
+    
     const response = await axios({
       method: 'GET',
       url: `${MASTERS_INDIA_CONFIG.baseURL}/commonapis/searchgstin`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'client_id': MASTERS_INDIA_CONFIG.client_id
-      },
+      headers: headers,
       params: {
         gstin: cleanGST
       },
       timeout: 30000
     });
     
-    debugLog('GST search raw response', response.data);
+    debugLog('📥 GST search response:', {
+      status: response.status,
+      hasData: !!response.data,
+      error: response.data?.error,
+      dataExists: !!response.data?.data
+    });
     
-    // Handle Masters India API Response - ONLY ACCEPT REAL DATA
+    debugLog('📥 Full response data:', response.data);
+    
+    // Handle response based on the EXACT structure from Postman
     if (response.status === 200) {
       if (response.data.error === false && response.data.data) {
-        // GST found successfully - REAL DATA
+        // Success case - GST found (as shown in Postman)
         debugLog('✅ GST details found successfully');
         return {
           success: true,
-          data: response.data.data
+          data: response.data.data,
+          rawResponse: response.data
         };
       } else if (response.data.error === true) {
-        // GST not found or invalid - NO SAMPLE DATA
-        const errorMessage = response.data.message || response.data.data || 'GST number not found in registry';
-        debugLog('❌ GST not found in registry', { error: errorMessage });
+        // Error case - GST not found
+        const errorMessage = response.data.message || response.data.data || 'GST number not found';
+        debugLog('❌ GST not found', { 
+          error: response.data.error,
+          message: errorMessage,
+          data: response.data.data
+        });
         return {
           success: false,
           error: 'GST_NOT_FOUND',
           message: errorMessage,
-          statusCode: 'NOT_FOUND'
+          apiResponse: response.data
         };
       } else {
         // Unexpected response format
@@ -137,242 +169,223 @@ const searchGSTDetails = async (gstNumber, accessToken) => {
           success: false,
           error: 'UNEXPECTED_RESPONSE',
           message: 'API returned unexpected response format',
-          statusCode: 'API_ERROR'
+          apiResponse: response.data
         };
       }
     } else {
-      debugLog('❌ GST search failed with status', response.status);
+      debugLog('❌ GST search failed with HTTP status', response.status);
       return {
         success: false,
-        error: 'API_REQUEST_FAILED',
-        message: `API returned status ${response.status}`,
-        statusCode: 'HTTP_ERROR'
+        error: 'HTTP_ERROR',
+        message: `API returned HTTP ${response.status}`,
+        status: response.status
       };
     }
     
   } catch (error) {
-    debugLog('❌ GST search error', { 
+    debugLog('❌ GST search network error', { 
       message: error.message,
       status: error.response?.status,
-      data: error.response?.data
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers
+      }
     });
+    
     return {
       success: false,
       error: 'NETWORK_ERROR',
       message: error.message,
-      statusCode: 'NETWORK_ERROR',
-      responseData: error.response?.data
+      details: error.response?.data,
+      status: error.response?.status
     };
   }
 };
 
-// Parse real GST data according to Masters India API response structure
-const parseRealGSTData = (gstData) => {
-  debugLog('📊 Parsing real GST data', { 
+// Parse GST data from Masters India API response (based on Postman structure)
+const parseGSTData = (gstData) => {
+  debugLog('📊 Parsing GST data structure:', {
     gstin: gstData.gstin,
     lgnm: gstData.lgnm,
-    sts: gstData.sts 
+    dty: gstData.dty,
+    stj: gstData.stj,
+    hasAddr: !!gstData.adadr,
+    hasNba: !!gstData.nba
   });
   
-  // Handle address data safely
-  let address = {};
-  if (gstData.pradr && gstData.pradr.addr) {
-    address = gstData.pradr.addr;
-  } else if (gstData.pradr) {
-    address = gstData.pradr;
-  }
-  
-  // Build full address from components
-  const addressParts = [
-    address.bno,    // Building Number
-    address.bnm,    // Building Name  
-    address.flno,   // Floor Number
-    address.st,     // Street
-    address.loc,    // Location
-    address.dst,    // District
-    address.city,   // City
-  ].filter(part => part && part.trim() && part !== 'null' && part !== 'undefined');
-  
-  const fullAddress = addressParts.join(', ');
-  
-  // Get state name from state code
-  const stateCode = address.stcd || gstData.gstin?.substring(0, 2);
-  const stateMapping = {
-    '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab',
-    '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana',
-    '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh',
-    '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
-    '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram',
-    '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam',
-    '19': 'West Bengal', '20': 'Jharkhand', '21': 'Odisha',
-    '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
-    '25': 'Daman and Diu', '26': 'Dadra and Nagar Haveli',
-    '27': 'Maharashtra', '28': 'Andhra Pradesh (Old)', '29': 'Karnataka',
-    '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala',
-    '33': 'Tamil Nadu', '34': 'Puducherry', '35': 'Andaman and Nicobar Islands',
-    '36': 'Telangana', '37': 'Andhra Pradesh (New)', '38': 'Ladakh'
-  };
-  
-  const stateName = stateMapping[stateCode] || address.stcd || 'Unknown State';
-  
-  return {
-    gstNumber: gstData.gstin || '',
-    businessName: gstData.lgnm || gstData.tradeNam || '',
-    tradeName: gstData.tradeNam || '',
-    legalName: gstData.lgnm || '',
-    businessType: gstData.ctb || 'Not Specified',
-    status: gstData.sts || 'Unknown',
-    registrationDate: gstData.rgdt || '',
-    lastUpdated: gstData.lstupdt || '',
-    businessAddress: {
-      buildingNumber: address.bno || '',
-      buildingName: address.bnm || '',
-      floorNumber: address.flno || '',
-      street: address.st || '',
-      location: address.loc || '',
-      district: address.dst || '',
+  try {
+    // Extract address information - handle the structure from Postman
+    let addressData = {};
+    if (gstData.adadr && Array.isArray(gstData.adadr) && gstData.adadr.length > 0) {
+      // Use first address if multiple addresses exist
+      addressData = gstData.adadr[0] || {};
+    }
+    
+    // Build complete address from components
+    const addressComponents = [
+      addressData.bno,    // Building Number
+      addressData.bnm,    // Building Name
+      addressData.flno,   // Floor Number
+      addressData.st,     // Street
+      addressData.loc,    // Location
+    ].filter(component => component && component.trim() && component !== 'null');
+    
+    const fullAddress = addressComponents.join(', ');
+    
+    // State code to name mapping
+    const stateMapping = {
+      '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
+      '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
+      '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
+      '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura',
+      '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
+      '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
+      '25': 'Daman and Diu', '26': 'Dadra and Nagar Haveli', '27': 'Maharashtra',
+      '28': 'Andhra Pradesh', '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep',
+      '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry', '35': 'Andaman and Nicobar Islands',
+      '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh'
+    };
+    
+    const stateCode = addressData.stcd || gstData.gstin?.substring(0, 2);
+    const stateName = stateMapping[stateCode] || 'Unknown State';
+    
+    // Parse business nature from 'nba' array
+    let businessNature = 'Not specified';
+    if (gstData.nba && Array.isArray(gstData.nba) && gstData.nba.length > 0) {
+      businessNature = gstData.nba[0] || 'Not specified';
+    }
+    
+    const parsedData = {
+      // Basic GST Information
+      gstNumber: gstData.gstin || '',
+      legalName: gstData.lgnm || '',
+      tradeName: gstData.tradeNam || gstData.lgnm || '',
+      registrationDate: gstData.rgdt || '',
+      gstStatus: gstData.sts || '',
+      taxpayerType: gstData.dty || '',
+      
+      // Address Information
+      address: fullAddress || '',
+      buildingNumber: addressData.bno || '',
+      buildingName: addressData.bnm || '',
+      street: addressData.st || '',
+      location: addressData.loc || '',
+      district: addressData.dst || '',
+      city: addressData.city || addressData.dst || '',
       state: stateName,
-      city: address.city || address.loc || '',
-      pincode: address.pncd || '',
-      fullAddress: fullAddress + (address.pncd ? ` - ${address.pncd}` : '')
-    },
-    businessActivities: Array.isArray(gstData.nba) ? gstData.nba : [],
-    jurisdiction: {
-      center: gstData.ctj || '',
-      state: gstData.stj || '',
-      centerCode: gstData.ctjCd || '',
-      stateCode: stateCode || ''
-    },
-    eInvoiceStatus: gstData.einvoiceStatus || 'No',
-    isActive: gstData.sts === 'Active',
-    verifiedAt: new Date().toISOString(),
-    apiProvider: 'Masters India',
-    isFallback: false
-  };
+      stateCode: stateCode || '',
+      pincode: addressData.pncd || '',
+      
+      // Business Information
+      businessNature: businessNature,
+      constitutionOfBusiness: gstData.ctb || '',
+      centerJurisdiction: gstData.ctj || '',
+      stateJurisdiction: gstData.stj || '',
+      
+      // Additional Details
+      additionalPlaceOfBusiness: gstData.adadr || [],
+      filingStatus: gstData.lstupdt || '',
+      cancellationDate: gstData.cxdt || '',
+      
+      // Metadata
+      apiProvider: 'Masters India',
+      verifiedAt: new Date().toISOString(),
+      rawData: gstData // Include raw data for debugging
+    };
+    
+    debugLog('✅ Successfully parsed GST data:', {
+      gstNumber: parsedData.gstNumber,
+      legalName: parsedData.legalName,
+      city: parsedData.city,
+      state: parsedData.state,
+      businessNature: parsedData.businessNature
+    });
+    
+    return parsedData;
+    
+  } catch (error) {
+    debugLog('❌ Error parsing GST data:', error.message);
+    throw new Error(`Failed to parse GST data: ${error.message}`);
+  }
 };
 
-// Main GST verification function - REAL DATA ONLY
+// Main function to get GST details
 const getGSTDetails = async (gstNumber) => {
-  debugLog('🚀 Starting GST verification process for:', gstNumber);
+  debugLog('🚀 Starting GST details retrieval process...');
   
   try {
+    // Validate GST format
     if (!validateGSTNumber(gstNumber)) {
-      throw new Error('Invalid GST number format. Please enter a valid 15-digit GST number.');
+      return {
+        success: false,
+        error: 'INVALID_GST_FORMAT',
+        message: 'Invalid GST number format'
+      };
     }
-
-    const cleanGST = gstNumber.replace(/\s/g, '').toUpperCase();
     
     // Step 1: Authenticate
     const authResult = await authenticateAPI();
-    
     if (!authResult.success) {
-      debugLog('❌ Authentication failed');
-      throw new Error(`Authentication failed: ${authResult.error}`);
+      return {
+        success: false,
+        error: 'AUTHENTICATION_FAILED',
+        message: 'Failed to authenticate with GST API',
+        details: authResult
+      };
     }
     
-    // Step 2: Search GST Details
-    const searchResult = await searchGSTDetails(cleanGST, authResult.accessToken);
+    debugLog('🔑 Authentication successful, proceeding with GST search...');
     
+    // Step 2: Search GST details
+    const searchResult = await searchGSTDetails(gstNumber, authResult.accessToken);
     if (!searchResult.success) {
-      debugLog('❌ GST search failed');
-      
-      // Return specific error based on type
-      if (searchResult.error === 'GST_NOT_FOUND') {
-        throw new Error(`GST number not found: ${searchResult.message}`);
-      } else if (searchResult.error === 'NETWORK_ERROR') {
-        throw new Error(`Network error: ${searchResult.message}`);
-      } else if (searchResult.error === 'API_REQUEST_FAILED') {
-        throw new Error(`API request failed: ${searchResult.message}`);
-      } else {
-        throw new Error(`GST verification failed: ${searchResult.message}`);
-      }
+      return searchResult; // Return the error as-is
     }
     
-    // Step 3: Parse and return ONLY real data
-    debugLog('✅ GST verification successful via Masters India API');
-    return parseRealGSTData(searchResult.data);
-
+    debugLog('📋 GST search successful, parsing data...');
+    
+    // Step 3: Parse the data
+    const parsedData = parseGSTData(searchResult.data);
+    
+    return {
+      success: true,
+      data: parsedData,
+      message: 'GST details retrieved successfully',
+      apiResponse: searchResult.rawResponse
+    };
+    
   } catch (error) {
-    debugLog('❌ GST verification failed:', error.message);
-    throw error; // Re-throw the error instead of returning sample data
+    debugLog('❌ GST details retrieval failed:', error.message);
+    return {
+      success: false,
+      error: 'PROCESS_FAILED',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    };
   }
 };
 
 // Test API connectivity
 const testAPIConnectivity = async () => {
-  debugLog('🧪 Testing API connectivity...');
+  debugLog('🧪 Testing Masters India API connectivity...');
   
   try {
-    // Test authentication
-    const authTest = await authenticateAPI();
-    
-    if (!authTest.success) {
-      return {
-        isReachable: false,
-        status: 'failed',
-        message: 'API authentication failed',
-        error: authTest.error,
-        details: {
-          authentication: {
-            success: false,
-            error: authTest.error
-          }
-        }
-      };
-    }
-    
-    // Test with a format-valid GST number
-    try {
-      const testGST = '27AABCU9603R1ZV';
-      const searchTest = await searchGSTDetails(testGST, authTest.accessToken);
-      
-      return {
-        isReachable: true,
-        status: 'working',
-        message: 'API is fully functional',
-        details: {
-          authentication: {
-            success: true
-          },
-          gstSearch: {
-            tested: true,
-            success: searchTest.success,
-            error: searchTest.error,
-            message: searchTest.message
-          },
-          credentials: {
-            username: MASTERS_INDIA_CONFIG.username,
-            client_id: MASTERS_INDIA_CONFIG.client_id,
-            baseURL: MASTERS_INDIA_CONFIG.baseURL
-          }
-        }
-      };
-    } catch (searchError) {
-      return {
-        isReachable: true,
-        status: 'auth_only',
-        message: 'API authentication works, but GST search has issues',
-        error: searchError.message,
-        details: {
-          authentication: {
-            success: true
-          },
-          gstSearch: {
-            tested: true,
-            success: false,
-            error: searchError.message
-          }
-        }
-      };
-    }
-    
-  } catch (error) {
-    debugLog('❌ Connectivity test failed:', error.message);
+    const authResult = await authenticateAPI();
     return {
-      isReachable: false,
-      status: 'failed',
-      message: 'API connectivity failed',
-      error: error.message
+      success: authResult.success,
+      message: authResult.success ? 'API connectivity test passed' : 'API connectivity test failed',
+      details: authResult,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'API connectivity test failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
     };
   }
 };
@@ -383,5 +396,6 @@ module.exports = {
   testAPIConnectivity,
   authenticateAPI,
   searchGSTDetails,
-  parseRealGSTData
+  parseGSTData,
+  MASTERS_INDIA_CONFIG
 };
