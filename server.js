@@ -239,7 +239,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
-app.use('/api/gst', require('./routes/gst'));
+
 
 // Catch-all route for frontend (if serving static files)
 if (process.env.NODE_ENV === 'development') {
