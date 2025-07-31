@@ -8,7 +8,28 @@ const { globalErrorHandler } = require('./utils/errorHandler');
 require('dotenv').config();
 
 const app = express();
- app.set('trust proxy', true);
+
+// 🔥 SECURE TRUST PROXY CONFIGURATION FOR RENDER
+// Instead of 'true', use specific trusted proxies for security
+if (process.env.NODE_ENV === 'development') {
+  // Render uses internal IP ranges - trust only these
+  app.set('trust proxy', ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', '127.0.0.1']);
+  console.log('✅ Trust proxy configured for Render production');
+} else {
+  // Development - trust loopback only
+  app.set('trust proxy', 'loopback');
+  console.log('✅ Trust proxy configured for development');
+}
+
+// Environment validation
+console.log('🔍 Environment Check:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('Trust Proxy:', app.get('trust proxy'));
+console.log('TWILIO_ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID ? 'SET' : 'MISSING');
+console.log('TWILIO_AUTH_TOKEN:', process.env.TWILIO_AUTH_TOKEN ? 'SET' : 'MISSING');
+console.log('TWILIO_PHONE_NUMBER:', process.env.TWILIO_PHONE_NUMBER);
+console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
+
 // Security middleware
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
@@ -23,7 +44,7 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration - FIXED FOR YOUR DEPLOYMENT
+// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
@@ -36,13 +57,9 @@ const corsOptions = {
       'http://localhost:5173',                       // Vite dev server
       'http://127.0.0.1:3000',                      // Alternative localhost
       process.env.FRONTEND_URL                       // Environment variable
-    ].filter(Boolean); // Remove undefined values
-    
-    console.log('🌐 Request from origin:', origin);
-    console.log('✅ Allowed origins:', allowedOrigins);
+    ].filter(Boolean);
     
     if (allowedOrigins.includes(origin)) {
-      console.log('✅ CORS allowed for:', origin);
       callback(null, true);
     } else {
       console.log('❌ CORS blocked origin:', origin);
@@ -61,113 +78,115 @@ const corsOptions = {
     'Pragma'
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 200, // Support legacy browsers
-  maxAge: 86400 // Cache preflight for 24 hours
+  optionsSuccessStatus: 200,
+  maxAge: 86400
 };
 
 app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly for all routes
 app.options('*', cors(corsOptions));
 
-// Rate limiting - More lenient for production cold starts
+// 🔥 SECURE RATE LIMITING with proper proxy configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 200 : 1000, // More requests for production
+  max: process.env.NODE_ENV === 'development' ? 200 : 1000,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // 🔥 SECURE: Don't set trustProxy here, rely on app-level setting
+  keyGenerator: (req) => {
+    // Get the real client IP with fallbacks
+    const clientIP = req.ip || 
+                    req.connection?.remoteAddress || 
+                    req.socket?.remoteAddress ||
+                    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                    req.headers['x-real-ip'] ||
+                    'unknown';
+    
+    console.log(`🔍 Rate limit key for IP: ${clientIP}`);
+    return clientIP;
+  },
   skip: (req) => {
     // Skip rate limiting for health checks
-    return req.path === '/api/health' || req.path === '/health';
+    return req.path === '/api/health' || 
+           req.path === '/health' ||
+           req.path.startsWith('/favicon');
+  },
+  onLimitReached: (req, res) => {
+    console.log(`🚨 Rate limit reached for IP: ${req.ip}, Path: ${req.path}`);
   }
 });
+
 app.use('/api/', limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
+// Enhanced logging with IP information
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 } else {
-  app.use(morgan('dev'));
+  app.use(morgan(':remote-addr :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'));
 }
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/aggrekart', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  console.log('✅ MongoDB connected successfully');
-  console.log(`📊 Database: ${mongoose.connection.name}`);
-})
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err);
-  process.exit(1);
+// Request debugging middleware
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`🌐 ${req.method} ${req.path} from IP: ${req.ip}`);
+  }
+  next();
 });
 
-// Health check endpoint (before other routes)
+// Database connection
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error('❌ Database connection failed:', error.message);
+    process.exit(1);
+  }
+};
+
+// Connect to database
+connectDB();
+
+// Test notification functions during startup
+(async () => {
+  try {
+    const { testNotificationServices } = require('./utils/notifications');
+    const status = await testNotificationServices();
+    console.log('📊 Notification Services Status:', status);
+  } catch (error) {
+    console.error('❌ Notification service test failed:', error.message);
+  }
+})();
+
+// Health check endpoint (before routes)
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
-    status: 'OK',
-    message: 'Aggrekart server is running',
+    message: 'Server is healthy',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// API Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
-    success: true,
-    status: 'OK', 
-    message: 'Aggrekart API is running',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    environment:'development',
-    cors: {
-      allowedOrigins: [
-        'https://aggrekart-com.onrender.com',
-        'http://localhost:3000',
-        process.env.FRONTEND_URL
-      ].filter(Boolean)
-    },
-    features: [
-      'User Authentication',
-      'Product Management', 
-      'Order Management',
-      'Supplier Management',
-      'Admin Panel',
-      'Payment Integration',
-      'Supplier Onboarding'
-    ]
-  });
-});
-
-// CORS test endpoint for debugging
-app.get('/api/test-cors', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CORS is working!',
-    origin: req.headers.origin,
-    userAgent: req.headers['user-agent'],
-    timestamp: new Date().toISOString(),
-    requestHeaders: {
-      origin: req.headers.origin,
-      referer: req.headers.referer,
-      host: req.headers.host
+    environment: process.env.NODE_ENV,
+    server: {
+      trustProxy: app.get('trust proxy'),
+      clientIP: req.ip,
+      headers: {
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'x-real-ip': req.headers['x-real-ip']
+      }
     }
   });
 });
 
-// API Routes
+// Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/products', require('./routes/products'));
@@ -182,139 +201,67 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
-// Add this line after line 184:
-
-// Add this line with your other route registrations:
 app.use('/api/gst', require('./routes/gst'));
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
+// Enhanced API health check
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
     success: true,
-    message: 'Welcome to Aggrekart API',
-    version: '1.0.0',
-    documentation: '/api/health',
-    cors_test: '/api/test-cors',
-    environment: 'development',
-    endpoints: {
-      auth: '/api/auth',
-      users: '/api/users',
-      products: '/api/products',
-      cart: '/api/cart',
-      orders: '/api/orders',
-      payments: '/api/payments',
-      suppliers: '/api/suppliers',
-      admin: '/api/admin',
-      loyalty: '/api/loyalty',
-      pilot: '/api/pilot',
-      reports: '/api/reports'
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    server: {
+      trustProxy: app.get('trust proxy'),
+      clientIP: req.ip,
+      userAgent: req.headers['user-agent']
+    },
+    services: {
+      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      notifications: {
+        sms: !!process.env.TWILIO_ACCOUNT_SID,
+        email: !!process.env.SMTP_EMAIL
+      }
     }
   });
 });
 
-// Serve static files in production (if you have a build folder)
-if (process.env.NODE_ENV === 'development') {
-  const path = require('path');
-  
-  // Check if build directory exists
-  try {
-    app.use(express.static(path.join(__dirname, 'build')));
-    
-    // Catch all handler for React Router (only for non-API routes)
-    app.get('*', (req, res, next) => {
-      // Skip API routes
-      if (req.path.startsWith('/api/') || req.path === '/health') {
-        return next();
-      }
-      
-      res.sendFile(path.join(__dirname, 'build', 'index.html'));
-    });
-  } catch (error) {
-    console.log('No build folder found, serving API only');
-  }
-}
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    path: req.originalUrl,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+});
 
-// Global error handling middleware
+// Global error handler (must be last)
 app.use(globalErrorHandler);
 
-// 404 handler for API routes
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ 
-    success: false,
-    message: `API route ${req.originalUrl} not found`,
-    availableRoutes: [
-      '/api/auth',
-      '/api/users',
-      '/api/products',
-      '/api/cart',
-      '/api/orders',
-      '/api/payments',
-      '/api/suppliers',
-      '/api/admin'
-    ]
-  });
-});
-
-// 404 handler for all other routes
-app.use('*', (req, res) => {
-  res.status(404).json({ 
-    success: false,
-    message: `Route ${req.originalUrl} not found`,
-    suggestion: 'Try /api/health for API status'
-  });
-});
-
+// Start server
 const PORT = process.env.PORT || 5000;
-
-// Create server and store reference for graceful shutdown
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Aggrekart server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
-  console.log(`🧪 CORS Test: http://localhost:${PORT}/api/test-cors`);
-  console.log(`📋 Available endpoints:`);
-  console.log(`   Authentication: http://localhost:${PORT}/api/auth`);
-  console.log(`   Products: http://localhost:${PORT}/api/products`);
-  console.log(`   Orders: http://localhost:${PORT}/api/orders`);
-  console.log(`   Payments: http://localhost:${PORT}/api/payments`);
-  console.log(`   Suppliers: http://localhost:${PORT}/api/suppliers`);
-  console.log(`   Admin: http://localhost:${PORT}/api/admin`);
-  console.log(`🌐 CORS configured for: https://aggrekart-com.onrender.com`);
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err, promise) => {
-  console.log('💥 Unhandled Promise Rejection:', err.message);
-  console.log('Shutting down server...');
-  server.close(() => {
-    process.exit(1);
-  });
-});
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.log('💥 Uncaught Exception:', err.message);
-  console.log('Shutting down server...');
-  process.exit(1);
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 API base: http://localhost:${PORT}/api`);
+  console.log(`📡 Trust proxy: ${app.get('trust proxy')}`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received');
-  console.log('Shutting down gracefully...');
+  console.log('👋 SIGTERM received, shutting down gracefully');
   server.close(() => {
-    console.log('Process terminated');
+    console.log('💤 Process terminated');
     mongoose.connection.close();
   });
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received');
-  console.log('Shutting down gracefully...');
+  console.log('👋 SIGINT received, shutting down gracefully');
   server.close(() => {
-    console.log('Process terminated');
+    console.log('💤 Process terminated');
     mongoose.connection.close();
-    process.exit(0);
   });
 });
 
