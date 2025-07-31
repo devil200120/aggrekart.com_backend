@@ -1,7 +1,8 @@
 {
   "name": "aggrekart-backend",
   "version": "1.0.0",
-  "description": "Aggrekart - Construction Materials E-commerce Platform Backend",
+   "proxy":"https://aggrekart-com.onrender.com",
+   "description": "Aggrekart - Construction Materials E-commerce Platform Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
