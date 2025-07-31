@@ -1,6 +1,6 @@
 const Supplier = require('../models/Supplier');
 const User = require('../models/User');
-const { sendEmail, sendSMS } = require('./notifications');
+const { sendEmail, sendSMS } = require('../utils/notifications');
 const { getGSTDetails } = require('./gstAPI');
 
 // Supplier onboarding workflow
