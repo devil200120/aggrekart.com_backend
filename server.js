@@ -6,6 +6,10 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const { globalErrorHandler } = require('./utils/errorHandler');
 require('dotenv').config();
+const newsletterRoutes = require('./routes/newsletter');
+
+
+
 
 const app = express();
 
@@ -182,6 +186,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/newsletter', newsletterRoutes);
 // Add this line after line 184:
 
 // Add this line with your other route registrations:
