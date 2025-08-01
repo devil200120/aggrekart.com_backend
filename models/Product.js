@@ -487,4 +487,29 @@ productSchema.virtual('price').get(function() {
 productSchema.set('toJSON', { virtuals: true });
 productSchema.set('toObject', { virtuals: true });
 
+
+// Method to get display price
+productSchema.methods.getDisplayPrice = function() {
+  return this.pricing?.basePrice || 0;
+};
+
+// Method to get price with GST
+productSchema.methods.getPriceWithGST = function() {
+  const basePrice = this.pricing?.basePrice || 0;
+  if (this.pricing?.includesGST) {
+    return basePrice;
+  }
+  const gstRate = this.pricing?.gstRate || 18;
+  return basePrice * (1 + gstRate / 100);
+};
+
+// Virtual for frontend compatibility
+productSchema.virtual('price').get(function() {
+  return this.pricing?.basePrice || 0;
+});
+
+// Ensure virtual fields are serialized
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
+
 module.exports = mongoose.model('Product', productSchema);
