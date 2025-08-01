@@ -182,7 +182,11 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
+// Add this line after line 184:
 
+// Add this line with your other route registrations:
+app.use('/api/gst', require('./routes/gst'));
+app.use('/api/gst', require('./routes/gst-fixed'));
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({

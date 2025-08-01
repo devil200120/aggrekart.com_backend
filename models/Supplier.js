@@ -13,17 +13,21 @@ const supplierSchema = new mongoose.Schema({
   },
   
   // Business Details
-  gstNumber: {
-    type: String,
-    required: [true, 'GST number is required'],
-    unique: true,
-    validate: {
-      validator: function(v) {
-        return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
-      },
-      message: 'Please provide a valid GST number'
-    }
-  },
+  // Replace the gstNumber field definition (around line 15-25):
+
+gstNumber: {
+  type: String,
+  sparse: true, // Allows multiple null values, but unique non-null values
+  unique: true,
+  validate: {
+    validator: function(v) {
+      // Allow empty/null GST numbers
+      if (!v || v === '') return true;
+      return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
+    },
+    message: 'Please provide a valid GST number'
+  }
+},
   companyName: {
     type: String,
     required: [true, 'Company name is required'],
@@ -103,25 +107,30 @@ const supplierSchema = new mongoose.Schema({
   },
   
   // Location Details
+  // Around line 108-125, update the dispatchLocation schema:
+
+// COMPLETELY REPLACE the dispatchLocation section (around line 107-126):
+
+  // Location Details
+  // REPLACE the dispatchLocation section (around line 107-126):
+
+  // Location Details
   dispatchLocation: {
     address: {
       type: String,
       required: [true, 'Dispatch address is required']
     },
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
     coordinates: {
-      type: {
-        type: String,
-        enum: ['Point'],
-        default: 'Point'
-      },
-      coordinates: {
-        type: [Number], // [longitude, latitude]
-        required: true,
-        index: '2dsphere'
-      }
+      type: [Number], // [longitude, latitude]
+      default: [0, 0],
+      index: '2dsphere'
     }
-  },
-  
+  },  
   // Bank Details
   bankDetails: {
     bankName: {
@@ -146,11 +155,58 @@ const supplierSchema = new mongoose.Schema({
       type: String,
       required: [true, 'Branch name is required']
     },
+    // Supplier can only modify these fields
+supplierControls: {
+  pricing: {
+    basePrice: {
+      type: Number,
+      required: true
+    },
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  deliveryTime: {
+    estimatedTime: String,
+    lastUpdated: Date,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  stock: {
+    available: Number,
+    lastUpdated: Date,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }
+},
+// Admin controls base product creation
+isBaseProduct: {
+  type: Boolean,
+  default: false // Only admin creates base products
+},
+createdByAdmin: {
+  type: Boolean,
+  default: false
+},
+    // Around line 155, update the upiId field:
+
+// REPLACE the upiId field (around line 154-162):
+
     upiId: {
       type: String,
-      required: [true, 'UPI ID is required'],
+      required: false,
       validate: {
         validator: function(v) {
+          if (!v) return true;
           return /^[\w\.\-_]{3,}@[a-zA-Z]{3,}$/.test(v);
         },
         message: 'Please provide a valid UPI ID'

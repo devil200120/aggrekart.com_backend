@@ -9,6 +9,9 @@ const router = express.Router();
 // @route   GET /api/cart
 // @desc    Get user's cart
 // @access  Private (Customer)
+// Update the cart GET route to ensure proper price structure
+
+// Replace the GET route around line 11-38:
 router.get('/', auth, authorize('customer'), async (req, res, next) => {
   try {
     let cart = await Cart.findOne({ user: req.user._id })
@@ -16,7 +19,7 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
         path: 'items.product',
         populate: {
           path: 'supplier',
-          select: 'companyName dispatchLocation'
+          select: 'companyName dispatchLocation businessName'
         }
       });
 
@@ -31,6 +34,40 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
     // Validate stock for all items
     const stockIssues = await cart.validateStock();
     
+    // Ensure all items have proper price structure
+    cart.items.forEach(item => {
+      if (item.product) {
+        // Ensure priceAtTime is set
+        if (!item.priceAtTime && item.product.pricing?.basePrice) {
+          item.priceAtTime = item.product.pricing.basePrice;
+        }
+        
+        // Add price field for frontend compatibility
+        if (!item.price) {
+          item.price = item.priceAtTime || item.product.pricing?.basePrice || 0;
+        }
+      }
+    });
+    
+    if (cart.isModified()) {
+      await cart.save();
+    }
+
+    // Recalculate totals to ensure accuracy
+    const totalAmount = cart.items.reduce((sum, item) => {
+      const itemPrice = item.priceAtTime || item.price || 0;
+      const itemQuantity = item.quantity || 0;
+      return sum + (itemPrice * itemQuantity);
+    }, 0);
+
+    const totalItems = cart.items.reduce((sum, item) => {
+      return sum + (item.quantity || 0);
+    }, 0);
+
+    // Update cart totals
+    cart.totalAmount = totalAmount;
+    cart.totalItems = totalItems;
+
     if (cart.isModified()) {
       await cart.save();
     }
@@ -38,16 +75,20 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
     res.json({
       success: true,
       data: { 
-        cart,
+        cart: {
+          ...cart.toObject(),
+          totalAmount,
+          totalItems
+        },
         stockIssues: stockIssues.length > 0 ? stockIssues : null
       }
     });
 
   } catch (error) {
+    console.error('Cart GET error:', error);
     next(error);
   }
 });
-
 // @route   POST /api/cart/items
 // @desc    Add item to cart
 // @access  Private (Customer)
@@ -91,7 +132,7 @@ router.post('/items', auth, authorize('customer'), [
     // Check stock availability
     if (!product.isInStock(quantity)) {
       return next(new ErrorHandler(
-        `Insufficient stock. Available: ${product.stock.available - product.stock.reserved} ${product.pricing.unit}`,
+`Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`,
         400
       ));
     }
@@ -198,8 +239,7 @@ router.put('/items/:itemId', auth, authorize('customer'), [
 
     if (!product.isInStock(quantity)) {
       return next(new ErrorHandler(
-        `Insufficient stock. Available: ${product.stock.available - product.stock.reserved} ${product.pricing.unit}`,
-        400
+`Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`,        400
       ));
     }
 

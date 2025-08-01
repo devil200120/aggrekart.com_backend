@@ -791,6 +791,11 @@ router.post('/login', [
       phoneVerified: user.phoneVerified,
       emailVerified: user.emailVerified
     });
+    console.log('🔐 Password check:', {
+      hasStoredPassword: !!user.password,
+      providedPassword: password,
+      userEmail: user.email
+    });
 
     // Check password first
     const isPasswordValid = await user.comparePassword(password);
