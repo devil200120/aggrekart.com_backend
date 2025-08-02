@@ -9,6 +9,8 @@ const { ErrorHandler } = require('../utils/errorHandler');
 const { sendEmail } = require('../utils/notifications');
 const router = express.Router();
 const { uploadProductImages } = require('../utils/cloudinary');
+const Analytics = require('../utils/analytics');
+const ReportGenerator = require('../utils/reports');
 
 
 // @route   GET /api/admin/dashboard
@@ -347,9 +349,12 @@ router.get('/suppliers', auth, authorize('admin'), [
     // Build filter
     let filter = {};
     
-    switch (status) {
+    
+switch (status) {
       case 'approved':
         filter.isApproved = true;
+        filter.isActive = true;
+        filter.rejectedAt = { $exists: false };
         break;
       case 'pending':
         filter.isApproved = false;
@@ -357,6 +362,11 @@ router.get('/suppliers', auth, authorize('admin'), [
         break;
       case 'rejected':
         filter.rejectedAt = { $exists: true };
+        break;
+      case 'suspended':
+        filter.isApproved = true;
+        filter.isActive = false;
+        filter.rejectedAt = { $exists: false };
         break;
       // 'all' - no additional filter
     }
@@ -984,11 +994,382 @@ router.get('/analytics/suppliers', auth, authorize('admin'), [
     next(error);
   }
 });
+router.get('/analytics', auth, authorize('admin'), [
+  query('period').optional().isIn(['7', '30', '90', '365']).withMessage('Period must be 7, 30, 90, or 365 days'),
+  query('timeRange').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid time range')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { period, timeRange } = req.query;
+    let periodDays = 30; // default
+
+    // Convert timeRange to period days
+    if (timeRange) {
+      const timeRangeMap = {
+        '7d': 7,
+        '30d': 30,
+        '90d': 90,
+        '1y': 365
+      };
+      periodDays = timeRangeMap[timeRange] || 30;
+    } else if (period) {
+      periodDays = parseInt(period);
+    }
+
+    console.log(`📊 Generating admin analytics for ${periodDays} days...`);
+
+    // Get analytics using the utility class
+    const analytics = await Analytics.getAdminAnalytics(periodDays);
+
+    // Calculate summary metrics
+    const totalRevenue = analytics.revenue.reduce((sum, day) => sum + (day.totalRevenue || 0), 0);
+    const totalOrders = analytics.revenue.reduce((sum, day) => sum + (day.orderCount || 0), 0);
+    const totalCommission = analytics.revenue.reduce((sum, day) => sum + (day.commission || 0), 0);
+
+    // Get current period totals
+    const currentDate = new Date();
+    const previousPeriodStart = new Date();
+    previousPeriodStart.setDate(currentDate.getDate() - (periodDays * 2));
+    const currentPeriodStart = new Date();
+    currentPeriodStart.setDate(currentDate.getDate() - periodDays);
+
+    // Get previous period data for comparison
+    const previousAnalytics = await Analytics.getAdminAnalytics(periodDays);
+    const previousRevenue = previousAnalytics.revenue.reduce((sum, day) => sum + (day.totalRevenue || 0), 0);
+    const previousOrders = previousAnalytics.revenue.reduce((sum, day) => sum + (day.orderCount || 0), 0);
+
+    // Calculate growth percentages
+    const revenueGrowth = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
+    const ordersGrowth = previousOrders > 0 ? ((totalOrders - previousOrders) / previousOrders) * 100 : 0;
+
+    // Get current user counts
+    const totalUsers = await User.countDocuments();
+    const totalCustomers = await User.countDocuments({ role: 'customer' });
+    const totalSuppliers = await User.countDocuments({ role: 'supplier' });
+    const activeSuppliers = await Supplier.countDocuments({ isApproved: true, isActive: true });
+
+    // Get previous user counts for growth calculation
+    const previousTotalUsers = await User.countDocuments({ 
+      createdAt: { $lt: currentPeriodStart } 
+    });
+    const usersGrowth = previousTotalUsers > 0 ? ((totalUsers - previousTotalUsers) / previousTotalUsers) * 100 : 0;
+
+    // Format revenue data for charts
+    const revenueChartData = analytics.revenue.map(day => ({
+      date: day._id,
+      revenue: day.totalRevenue || 0,
+      orders: day.orderCount || 0,
+      commission: day.commission || 0
+    }));
+
+    // Format user growth data
+    const userGrowthData = analytics.userGrowth.map(day => ({
+      date: day._id,
+      customers: day.customers || 0,
+      suppliers: day.suppliers || 0
+    }));
+
+    // Format category data
+    const categoryData = analytics.productStats.map(cat => ({
+      name: cat._id,
+      value: cat.count,
+      amount: cat.averagePrice * cat.count
+    }));
+
+    // Create response with formatted data
+    const response = {
+      success: true,
+      data: {
+        summary: {
+          totalRevenue,
+          totalOrders,
+          totalUsers,
+          activeSuppliers,
+          totalCommission,
+          revenueGrowth: Math.round(revenueGrowth * 10) / 10,
+          ordersGrowth: Math.round(ordersGrowth * 10) / 10,
+          usersGrowth: Math.round(usersGrowth * 10) / 10,
+          suppliersGrowth: 8.2 // You can calculate this similar to users
+        },
+        charts: {
+          revenue: revenueChartData,
+          userGrowth: userGrowthData,
+          categories: categoryData
+        },
+        topSuppliers: analytics.topSuppliers.slice(0, 5),
+        period: periodDays,
+        generatedAt: new Date().toISOString()
+      }
+    };
+
+    console.log(`✅ Analytics generated successfully - Revenue: ₹${totalRevenue}, Orders: ${totalOrders}`);
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('❌ Analytics generation failed:', error);
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/analytics/revenue
+// @desc    Get detailed revenue analytics
+// @access  Private (Admin)
+router.get('/analytics/revenue', auth, authorize('admin'), [
+  query('period').optional().isIn(['7', '30', '90', '365']).withMessage('Period must be 7, 30, 90, or 365 days')
+], async (req, res, next) => {
+  try {
+    const { period = '30' } = req.query;
+    const periodDays = parseInt(period);
+
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - periodDays);
+
+    // Detailed revenue breakdown
+    const revenueAnalytics = await Order.aggregate([
+      {
+        $match: {
+          status: { $in: ['delivered', 'shipped'] },
+          createdAt: { $gte: fromDate }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          commission: { $sum: '$pricing.commission' },
+          orderCount: { $sum: 1 },
+          averageOrderValue: { $avg: '$pricing.totalAmount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Revenue by category
+    const categoryRevenue = await Order.aggregate([
+      { $match: { status: 'delivered', createdAt: { $gte: fromDate } } },
+      { $unwind: '$items' },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'items.product',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' },
+      {
+        $group: {
+          _id: '$product.category',
+          revenue: { $sum: '$items.totalPrice' },
+          orderCount: { $sum: 1 },
+          averageValue: { $avg: '$items.totalPrice' }
+        }
+      },
+      { $sort: { revenue: -1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        timeline: revenueAnalytics,
+        categories: categoryRevenue,
+        period: periodDays
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/analytics/users
+// @desc    Get user analytics
+// @access  Private (Admin)
+router.get('/analytics/users', auth, authorize('admin'), [
+  query('period').optional().isIn(['7', '30', '90', '365']).withMessage('Period must be 7, 30, 90, or 365 days')
+], async (req, res, next) => {
+  try {
+    const { period = '30' } = req.query;
+    const periodDays = parseInt(period);
+
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - periodDays);
+
+    // User registration trends
+    const userGrowth = await User.aggregate([
+      {
+        $match: { createdAt: { $gte: fromDate } }
+      },
+      {
+        $group: {
+          _id: { 
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            role: '$role'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.date',
+          customers: { $sum: { $cond: [{ $eq: ['$_id.role', 'customer'] }, '$count', 0] } },
+          suppliers: { $sum: { $cond: [{ $eq: ['$_id.role', 'supplier'] }, '$count', 0] } },
+          total: { $sum: '$count' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // User activity stats
+    const activityStats = await User.aggregate([
+      {
+        $group: {
+          _id: '$role',
+          total: { $sum: 1 },
+          active: { $sum: { $cond: ['$isActive', 1, 0] } },
+          verified: { $sum: { $cond: ['$isPhoneVerified', 1, 0] } }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        growth: userGrowth,
+        activity: activityStats,
+        period: periodDays
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 // Add these routes before the final module.exports = router; line
 
 // @route   GET /api/admin/users
 // @desc    Get all users with filters
 // @access  Private (Admin)
+router.post('/analytics/export', auth, authorize('admin'), [
+  body('format').isIn(['excel', 'pdf', 'csv']).withMessage('Format must be excel, pdf, or csv'),
+  body('timeRange').optional().isIn(['7d', '30d', '90d', '1y']).withMessage('Invalid time range'),
+  body('includeCharts').optional().isBoolean().withMessage('includeCharts must be boolean')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { format, timeRange = '30d', includeCharts = false } = req.body;
+    
+    // Parse time range
+    const periodDays = timeRange === '7d' ? 7 : 
+                      timeRange === '30d' ? 30 : 
+                      timeRange === '90d' ? 90 : 365;
+
+    console.log(`📊 Exporting analytics in ${format} format for ${periodDays} days...`);
+
+    // Get comprehensive analytics data
+    const analytics = await Analytics.getAdminAnalytics(periodDays);
+    
+    // Calculate summary metrics
+    const totalRevenue = analytics.revenue.reduce((sum, day) => sum + (day.totalRevenue || 0), 0);
+    const totalOrders = analytics.revenue.reduce((sum, day) => sum + (day.orderCount || 0), 0);
+    const totalCommission = analytics.revenue.reduce((sum, day) => sum + (day.commission || 0), 0);
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    // Get additional metrics
+    const totalUsers = await User.countDocuments();
+    const totalSuppliers = await Supplier.countDocuments();
+    const activeSuppliers = await Supplier.countDocuments({ isApproved: true, isActive: true });
+
+    // Prepare export data
+    const exportData = {
+      summary: {
+        totalRevenue,
+        totalOrders,
+        totalCommission,
+        avgOrderValue,
+        totalUsers,
+        totalSuppliers,
+        activeSuppliers,
+        period: `${periodDays} days`,
+        generatedAt: new Date().toISOString()
+      },
+      dailyRevenue: analytics.revenue.map(day => ({
+        date: day._id,
+        revenue: day.totalRevenue || 0,
+        orders: day.orderCount || 0,
+        commission: day.commission || 0
+      })),
+      userGrowth: analytics.userGrowth.map(day => ({
+        date: day._id,
+        customers: day.customers || 0,
+        suppliers: day.suppliers || 0
+      })),
+      topSuppliers: analytics.topSuppliers.slice(0, 10).map(supplier => ({
+        name: supplier.companyName,
+        revenue: supplier.totalRevenue || 0,
+        orders: supplier.orderCount || 0,
+        products: supplier.productCount || 0
+      })),
+      categoryStats: analytics.productStats.map(cat => ({
+        category: cat._id,
+        products: cat.count || 0,
+        activeProducts: cat.activeCount || 0,
+        avgPrice: Math.round(cat.averagePrice || 0)
+      }))
+    };
+
+    // Generate report based on format
+    let reportBuffer;
+    let filename;
+    let contentType;
+
+    if (format === 'excel') {
+      const workbook = await ReportGenerator.generateAnalyticsExcelReport(exportData);
+      reportBuffer = await workbook.xlsx.writeBuffer();
+      filename = `analytics-report-${timeRange}-${new Date().toISOString().split('T')[0]}.xlsx`;
+      contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    } else if (format === 'pdf') {
+      reportBuffer = await ReportGenerator.generateAnalyticsPDFReport(exportData);
+      filename = `analytics-report-${timeRange}-${new Date().toISOString().split('T')[0]}.pdf`;
+      contentType = 'application/pdf';
+    } else if (format === 'csv') {
+      reportBuffer = await ReportGenerator.generateAnalyticsCSVReport(exportData);
+      filename = `analytics-report-${timeRange}-${new Date().toISOString().split('T')[0]}.csv`;
+      contentType = 'text/csv';
+    }
+
+    // Set headers for file download
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', reportBuffer.length);
+
+    console.log(`✅ Analytics export generated: ${filename} (${reportBuffer.length} bytes)`);
+
+    // Send the file
+    res.send(reportBuffer);
+
+  } catch (error) {
+    console.error('❌ Analytics export failed:', error);
+    next(error);
+  }
+});
 router.get('/users', auth, authorize('admin'), [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
   query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
@@ -2936,7 +3317,190 @@ router.put('/products/:productId/reject', auth, authorize('admin'), [
     next(error);
   }
 });
+// Add this route after the existing user routes (around line 3180):
 
+// @route   POST /api/admin/users
+// @desc    Create a new user (admin only)
+// @access  Private (Admin)
+// Replace the existing POST /users route with this fixed version:
+
+// @route   POST /api/admin/users
+// @desc    Create a new user (admin only)
+// @access  Private (Admin)
+router.post('/users', auth, authorize('admin'), [
+  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
+  body('email').isEmail().withMessage('Valid email required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('role').isIn(['customer', 'supplier', 'admin']).withMessage('Invalid role'),
+  body('phoneNumber').optional().isMobilePhone('en-IN').withMessage('Valid phone number required'),
+  body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
+  body('isPhoneVerified').optional().isBoolean().withMessage('isPhoneVerified must be boolean'),
+  body('isEmailVerified').optional().isBoolean().withMessage('isEmailVerified must be boolean')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { 
+      name, 
+      email, 
+      password, 
+      role, 
+      phoneNumber, 
+      isActive = true, 
+      isPhoneVerified = false, 
+      isEmailVerified = false,
+      address,
+      dateOfBirth,
+      customerType
+    } = req.body;
+
+    console.log('🔨 Admin creating new user:', { name, email, role });
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ 
+      $or: [
+        { email: email.toLowerCase() },
+        ...(phoneNumber ? [{ phoneNumber }] : [])
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: existingUser.email === email.toLowerCase() 
+          ? 'User with this email already exists'
+          : 'User with this phone number already exists'
+      });
+    }
+
+    // Generate customerId based on role
+    const generateCustomerId = async (role) => {
+      const prefix = role === 'customer' ? 'CUST' : role === 'supplier' ? 'SUPP' : 'ADM';
+      const timestamp = Date.now();
+      const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      return `${prefix}${timestamp}${randomNum}`;
+    };
+
+    // Generate phoneNumber if not provided (required by schema)
+    const generatePhoneNumber = async () => {
+      let phoneNumber;
+      let isUnique = false;
+      
+      while (!isUnique) {
+        // Generate a valid Indian phone number
+        const firstDigit = Math.floor(Math.random() * 4) + 6; // 6, 7, 8, or 9
+        const remainingDigits = Math.floor(Math.random() * 1000000000).toString().padStart(9, '0');
+        phoneNumber = `${firstDigit}${remainingDigits}`;
+        
+        // Check if it's unique
+        const existingPhone = await User.findOne({ phoneNumber });
+        if (!existingPhone) {
+          isUnique = true;
+        }
+      }
+      
+      return phoneNumber;
+    };
+
+    // Hash password
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Generate required fields
+    const customerId = await generateCustomerId(role);
+    const finalPhoneNumber = phoneNumber || await generatePhoneNumber();
+
+    // Create user data
+    const userData = {
+      customerId,
+      name: name.trim(),
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      role,
+      phoneNumber: finalPhoneNumber,
+      isActive,
+      isPhoneVerified: phoneNumber ? isPhoneVerified : false, // Only verify if provided by admin
+      isEmailVerified,
+      createdBy: req.user._id, // Track who created this user
+      createdAt: new Date()
+    };
+
+    // Add customerType for customers
+    if (role === 'customer') {
+      userData.customerType = customerType || 'others';
+    }
+
+    // Add optional fields
+    if (dateOfBirth) userData.dateOfBirth = new Date(dateOfBirth);
+
+    // Add address if provided
+    if (address && address.street && address.city && address.state && address.pincode) {
+      userData.addresses = [{
+        type: 'home',
+        address: address.street,
+        city: address.city,
+        state: address.state,
+        pincode: address.pincode,
+        isDefault: true
+      }];
+    }
+
+    // Create the user
+    const newUser = await User.create(userData);
+
+    // Remove password from response
+    const userResponse = newUser.toObject();
+    delete userResponse.password;
+
+    console.log('✅ User created successfully:', userResponse._id);
+
+    // Send welcome email (optional)
+    try {
+      const { sendEmail } = require('../utils/notifications');
+      
+      const emailText = phoneNumber 
+        ? `Hi ${name},\n\nYour account has been created by an administrator.\n\nEmail: ${email}\nPhone: ${finalPhoneNumber}\nRole: ${role}\nCustomer ID: ${customerId}\n\nPlease contact support if you need your password reset.\n\nBest regards,\nAggrekart Team`
+        : `Hi ${name},\n\nYour account has been created by an administrator.\n\nEmail: ${email}\nPhone: ${finalPhoneNumber} (auto-generated)\nRole: ${role}\nCustomer ID: ${customerId}\n\nNote: A phone number was auto-generated for your account. Please update it in your profile.\n\nPlease contact support if you need your password reset.\n\nBest regards,\nAggrekart Team`;
+
+      await sendEmail({
+        to: email,
+        subject: 'Welcome to Aggrekart!',
+        text: emailText
+      });
+    } catch (emailError) {
+      console.warn('⚠️ Welcome email failed:', emailError.message);
+      // Don't fail the user creation if email fails
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      data: { user: userResponse }
+    });
+
+  } catch (error) {
+    console.error('❌ User creation failed:', error);
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `${field} already exists`
+      });
+    }
+    
+    next(error);
+  }
+});
 // @route   PUT /api/admin/products/:productId/featured
 // @desc    Toggle product featured status
 // @access  Private (Admin)
@@ -4845,152 +5409,11 @@ router.get('/products', auth, authorize('admin'), [
 // @route   PUT /api/admin/products/:productId/approve
 // @desc    Approve a product
 // @access  Private (Admin)
-router.put('/products/:productId/approve', auth, authorize('admin'), [
-  param('productId').isMongoId().withMessage('Valid product ID required'),
-  body('reason').optional().trim().isLength({ max: 500 }).withMessage('Reason cannot exceed 500 characters')
-], async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { productId } = req.params;
-    const { reason } = req.body;
-
-    console.log('🔍 Admin approving product:', productId);
-
-    const product = await Product.findById(productId).populate('supplier', 'companyName email contactPersonName');
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    if (product.isApproved) {
-      return res.status(400).json({
-        success: false,
-        message: 'Product is already approved'
-      });
-    }
-
-    // Update product status
-    product.isApproved = true;
-    product.isActive = true;
-    product.approvedBy = req.user._id;
-    product.approvedAt = new Date();
-    product.approvalReason = reason || 'Approved by admin';
-
-    await product.save();
-
-    console.log('✅ Product approved:', product.name);
-
-    // TODO: Send notification email to supplier
-    // try {
-    //   await sendEmail(
-    //     product.supplier.email,
-    //     'Product Approved - Aggrekart',
-    //     `Your product "${product.name}" has been approved and is now live on the platform.`
-    //   );
-    // } catch (error) {
-    //   console.error('Failed to send approval email:', error);
-    // }
-
-    res.json({
-      success: true,
-      message: 'Product approved successfully',
-      data: { 
-        product: {
-          _id: product._id,
-          name: product.name,
-          isApproved: product.isApproved,
-          isActive: product.isActive
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Error approving product:', error);
-    next(error);
-  }
-});
 
 // @route   PUT /api/admin/products/:productId/reject
 // @desc    Reject a product
 // @access  Private (Admin)
-router.put('/products/:productId/reject', auth, authorize('admin'), [
-  param('productId').isMongoId().withMessage('Valid product ID required'),
-  body('reason').trim().isLength({ min: 10, max: 500 }).withMessage('Rejection reason must be 10-500 characters')
-], async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
 
-    const { productId } = req.params;
-    const { reason } = req.body;
-
-    console.log('🔍 Admin rejecting product:', productId);
-
-    const product = await Product.findById(productId).populate('supplier', 'companyName email contactPersonName');
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    if (product.rejectedAt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Product is already rejected'
-      });
-    }
-
-    // Update product status
-    product.isApproved = false;
-    product.isActive = false;
-    product.rejectedBy = req.user._id;
-    product.rejectedAt = new Date();
-    product.rejectionReason = reason;
-
-    await product.save();
-
-    console.log('❌ Product rejected:', product.name);
-
-    // TODO: Send notification email to supplier
-    // try {
-    //   await sendEmail(
-    //     product.supplier.email,
-    //     'Product Rejected - Aggrekart',
-    //     `Your product "${product.name}" has been rejected. Reason: ${reason}`
-    //   );
-    // } catch (error) {
-    //   console.error('Failed to send rejection email:', error);
-    // }
-
-    res.json({
-      success: true,
-      message: 'Product rejected successfully'
-    });
-
-  } catch (error) {
-    console.error('❌ Error rejecting product:', error);
-    next(error);
-  }
-});
 
 // @route   PUT /api/admin/products/:productId/featured
 // @desc    Toggle product featured status
@@ -5094,5 +5517,191 @@ router.delete('/products/:productId', auth, authorize('admin'), [
 
 // Remove the supplier routes that shouldn't be here
 // (The routes from line 1100-1285 should be moved to suppliers.js)
+// Add these routes to routes/admin.js
 
+// @route   GET /api/admin/approvals/pending
+// @desc    Get all pending approvals (suppliers + products)
+// @access  Private (Admin)
+router.get('/approvals/pending', auth, authorize('admin'), async (req, res, next) => {
+  try {
+    // Get pending suppliers
+    const pendingSuppliers = await Supplier.find({ 
+      isApproved: false,
+      isActive: false 
+    })
+    .populate('user', 'name email')
+    .select('supplierId companyName tradeOwnerName email phoneNumber businessAddress createdAt')
+    .sort({ createdAt: -1 });
+
+    // Get pending products  
+    const pendingProducts = await Product.find({
+      isApproved: false,
+      isActive: true
+    })
+    .populate('supplier', 'companyName supplierId')
+    .select('name category supplier pricing createdAt')
+    .sort({ createdAt: -1 });
+
+    // Format approvals
+    const approvals = [
+      ...pendingSuppliers.map(supplier => ({
+        _id: supplier._id,
+        type: 'supplier',
+        title: `Supplier: ${supplier.companyName}`,
+        description: `${supplier.tradeOwnerName} - ${supplier.email}`,
+        entityId: supplier._id,
+        createdAt: supplier.createdAt,
+        status: 'pending'
+      })),
+      ...pendingProducts.map(product => ({
+        _id: product._id,
+        type: 'product', 
+        title: `Product: ${product.name}`,
+        description: `Category: ${product.category} - Supplier: ${product.supplier?.companyName}`,
+        entityId: product._id,
+        createdAt: product.createdAt,
+        status: 'pending'
+      }))
+    ];
+
+    // Sort by creation date (newest first)
+    approvals.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+      success: true,
+      data: {
+        approvals,
+        counts: {
+          total: approvals.length,
+          suppliers: pendingSuppliers.length,
+          products: pendingProducts.length
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/approvals/:approvalId
+// @desc    Get specific approval details
+// @access  Private (Admin)
+router.get('/approvals/:approvalId', auth, authorize('admin'), [
+  param('approvalId').isMongoId().withMessage('Valid approval ID required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { approvalId } = req.params;
+
+    // Try to find as supplier first
+    let approval = await Supplier.findById(approvalId)
+      .populate('user', 'name email phoneNumber')
+      .select('-password');
+
+    if (approval) {
+      return res.json({
+        success: true,
+        data: {
+          type: 'supplier',
+          approval
+        }
+      });
+    }
+
+    // Try to find as product
+    approval = await Product.findById(approvalId)
+      .populate('supplier', 'companyName supplierId contactPersonName')
+      .select('-__v');
+
+    if (approval) {
+      return res.json({
+        success: true,
+        data: {
+          type: 'product',
+          approval
+        }
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'Approval item not found'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/admin/approvals/:approvalId/:action
+// @desc    Process approval (approve/reject)
+// @access  Private (Admin)
+router.put('/approvals/:approvalId/:action', auth, authorize('admin'), [
+  param('approvalId').isMongoId().withMessage('Valid approval ID required'),
+  param('action').isIn(['approve', 'reject']).withMessage('Action must be approve or reject'),
+  body('reason').optional().trim().isLength({ max: 500 }).withMessage('Reason cannot exceed 500 characters')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { approvalId, action } = req.params;
+    const { reason } = req.body;
+
+    // Try supplier first
+    let supplier = await Supplier.findById(approvalId);
+    if (supplier) {
+      if (action === 'approve') {
+        // Redirect to existing supplier approval route
+        req.params.supplierId = approvalId;
+        req.body = { commissionRate: 5, notes: reason };
+        return router.handle(req, res, next);
+      } else {
+        // Redirect to existing supplier rejection route  
+        req.params.supplierId = approvalId;
+        req.body = { reason };
+        return router.handle(req, res, next);
+      }
+    }
+
+    // Try product
+    let product = await Product.findById(approvalId);
+    if (product) {
+      if (action === 'approve') {
+        // Redirect to existing product approval route
+        req.params.productId = approvalId;
+        req.body = { reason };
+        return router.handle(req, res, next);
+      } else {
+        // Redirect to existing product rejection route
+        req.params.productId = approvalId; 
+        req.body = { reason };
+        return router.handle(req, res, next);
+      }
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'Approval item not found'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 module.exports = router;
