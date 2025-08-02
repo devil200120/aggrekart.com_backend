@@ -129,7 +129,9 @@ query('brand').optional().isString().withMessage('Invalid brand'),
     // Build filter object
     const filter = {
       isActive: true,
-      isApproved: true
+      isApproved: true,
+      'stock.available': { $gt: 0 }
+
     };
 
     if (category) filter.category = category;
@@ -284,6 +286,110 @@ const transformedProducts = products.map(product => {
   }
 });
 
+// Add this after the main GET /api/products route (around line 280, before the GET /:productId route)
+
+// @route   GET /api/products/featured
+// @desc    Get featured/top-rated products for homepage
+// @access  Public
+router.get('/featured', optionalAuth, async (req, res, next) => {
+  try {
+    const { type = 'top-rated', limit = 6 } = req.query;
+    
+    let filter = {
+      isActive: true,
+      isApproved: true
+    };
+    
+    let sortObj = {};
+    
+    switch (type) {
+      case 'top-rated':
+        // Products with rating >= 3.5 and at least 1 review
+        filter.averageRating = { $gte: 3.5 };
+        filter.totalReviews = { $gte: 1 };
+        sortObj = { averageRating: -1, totalReviews: -1 };
+        break;
+        
+      case 'popular':
+        // Most ordered products
+        sortObj = { salesCount: -1, viewCount: -1 };
+        break;
+        
+      case 'newest':
+        // Recently added products
+        sortObj = { createdAt: -1 };
+        break;
+        
+      case 'trending':
+        // Products with high recent activity
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        filter.createdAt = { $gte: thirtyDaysAgo };
+        sortObj = { viewCount: -1, salesCount: -1 };
+        break;
+        
+      default:
+        // Default to newest if no top-rated products
+        sortObj = { createdAt: -1 };
+    }
+    
+    let products = await Product.find(filter)
+      .populate('supplier', 'companyName location rating isApproved')
+      .sort(sortObj)
+      .limit(parseInt(limit));
+    
+    // If no top-rated products found, get newest products
+    if (products.length === 0 && type === 'top-rated') {
+      products = await Product.find({
+        isActive: true,
+        isApproved: true
+      })
+      .populate('supplier', 'companyName location rating isApproved')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    }
+    
+    // Transform products for frontend
+    const transformedProducts = products.map(product => {
+      const productObj = product.toObject();
+      
+      // Get primary image or first available image
+      let imageUrl = null;
+      if (productObj.images && productObj.images.length > 0) {
+        const primaryImage = productObj.images.find(img => img.isPrimary);
+        imageUrl = primaryImage ? primaryImage.url : productObj.images[0].url;
+      }
+      
+      return {
+        ...productObj,
+        price: productObj.pricing?.basePrice || 0,
+        originalPrice: productObj.pricing?.originalPrice || null,
+        inStock: (productObj.stock?.available || 0) > (productObj.stock?.reserved || 0),
+        image: imageUrl,
+        supplier: {
+          _id: productObj.supplier?._id,
+          companyName: productObj.supplier?.companyName || 'Unknown Supplier',
+          location: productObj.supplier?.location || {},
+          rating: productObj.supplier?.rating || { average: 0, count: 0 },
+          isApproved: productObj.supplier?.isApproved || false
+        },
+        supplierName: productObj.supplier?.companyName || 'Unknown Supplier'
+      };
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        products: transformedProducts,
+        type,
+        count: transformedProducts.length
+      }
+    });
+    
+  } catch (error) {
+    next(error);
+  }
+});
 // @route   GET /api/products/:productId
 // @desc    Get single product details
 // @access  Public
@@ -1277,5 +1383,6 @@ function calculateDeliveryTime(distance) {
   if (distance <= 50) return '1-2 days';
   return '2-3 days';
 }
+
 
 module.exports = router;
