@@ -6,10 +6,21 @@ const User = require('../models/User');
 const Product = require('../models/Product');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { validateGST, validatePAN, validateIFSC, validateUPI } = require('../utils/validators');
-const { sendEmail } = require('../utils/notifications');
+const { sendEmail, sendSMS } = require('../utils/notifications');
 const { getGSTDetails, getStateFromGST } = require('../utils/gstAPI'); // Add getStateFromGST here
+const Order = require('../models/Order'); // Add this line
 
 const router = express.Router();
+(async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.db.collection('suppliers').dropIndex('gstin_1');
+      console.log('✅ Fixed GST index issue');
+    }
+  } catch (error) {
+    console.log('ℹ️ Index already fixed or doesn\'t exist');
+  }
+})();
 // Add this right after line 11 (after const router = express.Router();)
 
 // @route   POST /api/suppliers/register-new
@@ -96,14 +107,19 @@ console.log('=== END BACKEND DATA ===');
     }
 
     // Check if GST number is already registered
-    const gstExists = await Supplier.findOne({ gstNumber });
-    if (gstExists) {
-      return res.status(400).json({
-        success: false,
-        message: 'GST number already registered'
-      });
-    }
-
+//     if (gstNumber && gstNumber.trim()) {
+//   const gstExists = await Supplier.findOne({ 
+//     gstNumber: gstNumber.trim(),
+//     isActive: true 
+//   });
+  
+//   if (gstExists) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'A supplier is already registered with this GST number. Please contact support if you need additional access.'
+//     });
+//   }
+// }
     // Generate customer ID
     const generateCustomerId = () => {
       const timestamp = Date.now().toString().slice(-6);
@@ -187,6 +203,32 @@ console.log('=== END BACKEND DATA ===');
     user.emailOTPExpire = Date.now() + 10 * 60 * 1000;
 
     await user.save();
+// Send OTPs via SMS and Email
+    try {
+      // Send SMS OTP
+      await sendSMS(
+        phoneNumber, 
+        `Your Aggrekart supplier verification OTP is: ${phoneOTP}. Valid for 10 minutes. Do not share this OTP.`
+      );
+      console.log(`📱 SMS OTP sent to ${phoneNumber}: ${phoneOTP}`);
+    } catch (smsError) {
+      console.error('📱 SMS sending failed:', smsError.message);
+      // Continue registration even if SMS fails
+    }
+
+    try {
+  // Send Email OTP - Clean HTML without line breaks
+  const htmlContent = `<h2>Welcome to Aggrekart!</h2><p>Thank you for registering as a supplier. Please verify your email with the OTP below:</p><h3 style="background: #fc8019; color: white; padding: 10px; text-align: center;">${emailOTP}</h3><p>This OTP is valid for 10 minutes.</p><p>If you didn't register for this account, please ignore this email.</p>`;
+  
+  await sendEmail(
+    email,
+    'Verify Your Aggrekart Supplier Account',
+    htmlContent
+  );
+  console.log(`📧 Email OTP sent to ${email}: ${emailOTP}`);
+} catch (emailError) {
+  console.error('📧 Email sending failed:', emailError.message);
+}
 
     // Prepare response
     const responseData = {
@@ -634,24 +676,165 @@ router.get('/dashboard', auth, authorize('supplier'), async (req, res, next) => 
       .lean();
 
     // Mock sales data for the period (replace with actual order data when available)
+        // Get real sales data from orders for the specified period
+    const daysInt = parseInt(days);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysInt);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Aggregate real order data by date
+    const orderAggregation = await Order.aggregate([
+      {
+        $match: {
+          supplier: supplier._id,
+          createdAt: { $gte: startDate },
+          status: { $in: ['confirmed', 'preparing', 'processing', 'dispatched', 'delivered'] } // Exclude cancelled/pending
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          },
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          totalOrders: { $sum: 1 },
+          averageOrderValue: { $avg: '$pricing.totalAmount' },
+          totalItems: { $sum: { $size: '$items' } },
+          uniqueCustomers: { $addToSet: '$customer' }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          date: {
+            $dateFromParts: {
+              year: '$_id.year',
+              month: '$_id.month',
+              day: '$_id.day'
+            }
+          },
+          totalRevenue: 1,
+          totalOrders: 1,
+          averageOrderValue: { $round: ['$averageOrderValue', 0] },
+          totalItems: 1,
+          uniqueCustomers: { $size: '$uniqueCustomers' }
+        }
+      },
+      {
+        $sort: { date: 1 }
+      }
+    ]);
+
+    // Create a complete date range with zero values for missing dates
     const salesData = [];
-    for (let i = parseInt(days); i >= 0; i--) {
+    for (let i = daysInt - 1; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
+      const dateString = date.toISOString().split('T')[0];
+      
+      // Find matching order data for this date
+      const dayData = orderAggregation.find(item => {
+        const itemDate = new Date(item.date).toISOString().split('T')[0];
+        return itemDate === dateString;
+      });
+      
       salesData.push({
-        date: date.toISOString().split('T')[0],
-        revenue: Math.floor(Math.random() * 50000) + 10000, // Mock data
-        orders: Math.floor(Math.random() * 10) + 1 // Mock data
+        date: dateString,
+        revenue: dayData ? dayData.totalRevenue : 0,
+        orders: dayData ? dayData.totalOrders : 0,
+        totalSales: dayData ? dayData.totalRevenue : 0,
+        totalOrders: dayData ? dayData.totalOrders : 0,
+        uniqueCustomers: dayData ? dayData.uniqueCustomers : 0,
+        avgOrderValue: dayData ? dayData.averageOrderValue : 0,
+        totalItems: dayData ? dayData.totalItems : 0
       });
     }
 
-    // Calculate growth metrics (mock data - replace with actual calculations)
-    const previousPeriodRevenue = 150000; // Mock previous period
-    const currentRevenue = supplier.totalRevenue || 0;
-    const revenueGrowth = previousPeriodRevenue > 0 
-      ? ((currentRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100 
-      : 0;
+    // Calculate real growth metrics
+    const currentPeriodStats = await Order.aggregate([
+      {
+        $match: {
+          supplier: supplier._id,
+          createdAt: { $gte: startDate },
+          status: { $in: ['confirmed', 'preparing', 'processing', 'dispatched', 'delivered'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          totalOrders: { $sum: 1 },
+          averageOrderValue: { $avg: '$pricing.totalAmount' }
+        }
+      }
+    ]);
 
+    // Get previous period stats for comparison
+    const previousStartDate = new Date(startDate);
+    previousStartDate.setDate(previousStartDate.getDate() - daysInt);
+    
+    const previousPeriodStats = await Order.aggregate([
+      {
+        $match: {
+          supplier: supplier._id,
+          createdAt: { 
+            $gte: previousStartDate,
+            $lt: startDate
+          },
+          status: { $in: ['confirmed', 'preparing', 'processing', 'dispatched', 'delivered'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          totalOrders: { $sum: 1 },
+          averageOrderValue: { $avg: '$pricing.totalAmount' }
+        }
+      }
+    ]);
+
+    const currentStats = currentPeriodStats[0] || { totalRevenue: 0, totalOrders: 0, averageOrderValue: 0 };
+    const previousStats = previousPeriodStats[0] || { totalRevenue: 0, totalOrders: 0, averageOrderValue: 0 };
+
+    // Calculate real growth percentages
+    const revenueGrowth = previousStats.totalRevenue > 0 
+      ? ((currentStats.totalRevenue - previousStats.totalRevenue) / previousStats.totalRevenue) * 100 
+      : currentStats.totalRevenue > 0 ? 100 : 0;
+
+    const ordersGrowth = previousStats.totalOrders > 0 
+      ? ((currentStats.totalOrders - previousStats.totalOrders) / previousStats.totalOrders) * 100 
+      : currentStats.totalOrders > 0 ? 100 : 0;
+
+    const aovGrowth = previousStats.averageOrderValue > 0 
+      ? ((currentStats.averageOrderValue - previousStats.averageOrderValue) / previousStats.averageOrderValue) * 100 
+      : currentStats.averageOrderValue > 0 ? 100 : 0;
+
+    // Get overall supplier stats from all orders
+    const supplierTotalStats = await Order.aggregate([
+      {
+        $match: {
+          supplier: supplier._id,
+          status: { $in: ['confirmed', 'preparing', 'processing', 'dispatched', 'delivered'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          totalOrders: { $sum: 1 },
+          averageOrderValue: { $avg: '$pricing.totalAmount' }
+        }
+      }
+    ]);
+
+    const supplierStats = supplierTotalStats[0] || { totalRevenue: 0, totalOrders: 0, averageOrderValue: 0 };
+
+    // Calculate growth metrics (replace mock data with real calculations)
+    const previousPeriodRevenue = previousStats.totalRevenue;
+    const currentRevenue = supplierStats.totalRevenue;
     const dashboardData = {
       supplier: {
         name: supplier.companyName,
@@ -905,6 +1088,579 @@ router.post('/documents/upload', auth, authorize('supplier'), async (req, res, n
   }
 });
 // Add these to your routes/suppliers.js file:
+
+// @route   GET /api/suppliers/stats
+// @desc    Get supplier statistics for dashboard
+// @access  Private (Supplier)
+router.get('/stats', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    const { days = 30 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Calculate stats here
+    const stats = {
+      totalRevenue: 0,
+      totalOrders: 0,
+      totalProducts: 0,
+      averageOrderValue: 0,
+      revenueGrowth: 0,
+      ordersGrowth: 0,
+      productsGrowth: 0,
+      aovGrowth: 0
+    };
+
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/suppliers/analytics/products
+// @desc    Get product analytics
+// @access  Private (Supplier)
+router.get('/analytics/products', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    // Get product performance data
+    const products = []; // Implement product analytics logic
+
+    res.json({ success: true, data: products });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/suppliers/analytics/sales
+// @desc    Get sales analytics
+// @access  Private (Supplier)
+router.get('/analytics/sales', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    // Get sales analytics data
+    const salesData = []; // Implement sales analytics logic
+
+    res.json({ success: true, data: salesData });
+  } catch (error) {
+    next(error);
+  }
+});
+// Add this new route after the existing routes
+
+// @route   POST /api/suppliers/verify-gst
+// @desc    Verify GST number and return business details for auto-fill
+// @access  Public
+router.post('/verify-gst', [
+  body('gstNumber').custom((value) => {
+    if (!validateGST(value)) {
+      throw new Error('Please provide a valid GST number');
+    }
+    return true;
+  })
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid GST number format',
+        errors: errors.array()
+      });
+    }
+
+    const { gstNumber } = req.body;
+
+    // Check if GST is already registered
+    const existingSupplier = await Supplier.findOne({ gstNumber });
+    if (existingSupplier) {
+      return res.status(409).json({
+        success: false,
+        message: 'This GST number is already registered with another supplier',
+        isRegistered: true
+      });
+    }
+
+    try {
+      // Get GST details from API
+      const gstDetails = await getGSTDetails(gstNumber);
+      
+      if (gstDetails) {
+        // Extract state from GST number
+        const stateCode = gstNumber.substring(0, 2);
+        const stateFromGST = getStateFromGST(gstNumber);
+        
+        // Parse address for auto-fill
+        const addressData = gstDetails.address || {};
+        
+        const autoFillData = {
+          gstNumber: gstDetails.gstNumber,
+          companyName: gstDetails.legalName || gstDetails.tradeName || '',
+          tradeName: gstDetails.tradeName || '',
+          businessAddress: `${addressData.building || ''} ${addressData.street || ''}`.trim(),
+          city: addressData.city || '',
+          state: stateFromGST || addressData.state || '',
+          pincode: addressData.pincode || '',
+          registrationDate: gstDetails.registrationDate,
+          gstStatus: gstDetails.status,
+          taxpayerType: gstDetails.taxpayerType,
+          isVerified: gstDetails.isVerified || false,
+          lastUpdated: gstDetails.lastUpdated
+        };
+
+        res.json({
+          success: true,
+          message: 'GST details retrieved successfully',
+          data: autoFillData,
+          isValid: true,
+          source: gstDetails.apiSource || 'api'
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          message: 'GST details not found',
+          isValid: false
+        });
+      }
+    } catch (gstError) {
+      console.error('GST API Error:', gstError);
+      res.status(500).json({
+        success: false,
+        message: 'Unable to verify GST number at the moment. Please try again.',
+        error: process.env.NODE_ENV === 'development' ? gstError.message : undefined
+      });
+    }
+
+  } catch (error) {
+    next(error);
+  }
+});
+// Add this test route at the very end of your file, just before module.exports = router;
+
+// TEST ROUTE - Add this temporarily to isolate the issue
+router.post('/test-gst-debug', async (req, res) => {
+  console.log('🚀 TEST ROUTE STARTED');
+  
+  try {
+    console.log('1️⃣ Testing basic response...');
+    
+    // Test 1: Basic response
+    const basicTest = { step: 1, status: 'Basic route works' };
+    console.log('✅ Basic test passed');
+    
+    // Test 2: Check imports
+    console.log('2️⃣ Testing imports...');
+    console.log('getGSTDetails function:', typeof getGSTDetails);
+    console.log('getStateFromGST function:', typeof getStateFromGST);
+    console.log('Supplier model:', typeof Supplier);
+    
+    if (typeof getGSTDetails !== 'function') {
+      throw new Error('getGSTDetails is not a function');
+    }
+    
+    if (typeof getStateFromGST !== 'function') {
+      throw new Error('getStateFromGST is not a function');
+    }
+    
+    console.log('✅ Imports test passed');
+    
+    // Test 3: Database connection
+    console.log('3️⃣ Testing database...');
+    const testQuery = await Supplier.countDocuments();
+    console.log('Database suppliers count:', testQuery);
+    console.log('✅ Database test passed');
+    
+    // Test 4: GST API call
+    console.log('4️⃣ Testing GST API...');
+    const testGST = '21XVPFY27901Z1';
+    console.log('Calling getGSTDetails with:', testGST);
+    
+    const gstResult = await getGSTDetails(testGST);
+    console.log('GST API result:', !!gstResult);
+    console.log('GST data sample:', gstResult ? {
+      gstNumber: gstResult.gstNumber,
+      legalName: gstResult.legalName,
+      hasAddress: !!gstResult.address
+    } : 'null');
+    
+    console.log('✅ GST API test passed');
+    
+    // Test 5: State extraction
+    console.log('5️⃣ Testing state extraction...');
+    const stateResult = getStateFromGST(testGST);
+    console.log('State result:', stateResult);
+    console.log('✅ State extraction test passed');
+    
+    // Test 6: Full verification simulation
+    console.log('6️⃣ Testing full flow...');
+    
+    const existingSupplier = await Supplier.findOne({ gstNumber: testGST });
+    console.log('Existing supplier check:', !!existingSupplier);
+    
+    if (gstResult) {
+      const stateFromGST = getStateFromGST(testGST);
+      const addressData = gstResult.address || {};
+      
+      const autoFillData = {
+        gstNumber: gstResult.gstNumber,
+        companyName: gstResult.legalName || gstResult.tradeName || '',
+        tradeName: gstResult.tradeName || '',
+        businessAddress: `${addressData.building || ''} ${addressData.street || ''}`.trim(),
+        city: addressData.city || '',
+        state: stateFromGST || addressData.state || '',
+        pincode: addressData.pincode || '',
+        registrationDate: gstResult.registrationDate,
+        gstStatus: gstResult.status,
+        taxpayerType: gstResult.taxpayerType,
+        isVerified: gstResult.isVerified || false,
+        lastUpdated: gstResult.lastUpdated
+      };
+      
+      console.log('✅ Full flow test passed');
+      console.log('Sample auto-fill data:', {
+        companyName: autoFillData.companyName,
+        state: autoFillData.state,
+        city: autoFillData.city
+      });
+      
+      return res.json({
+        success: true,
+        message: 'All tests passed!',
+        tests: {
+          basicResponse: true,
+          imports: true,
+          database: true,
+          gstAPI: true,
+          stateExtraction: true,
+          fullFlow: true
+        },
+        sampleData: autoFillData
+      });
+    } else {
+      throw new Error('GST API returned null');
+    }
+    
+  } catch (error) {
+    console.error('💥 TEST FAILED at step:', error.message);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 5)
+    });
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Test failed',
+      error: error.message,
+      errorType: error.name,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+// @route   GET /api/suppliers/base-products
+// @desc    Get base products available for pricing (supplier only)
+// @access  Private (Supplier)
+// Replace the entire base-products route (lines 1192-1268) with this fixed version:
+
+router.get('/base-products', auth, authorize('supplier'), async (req, res, next) => {
+  try {
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    // Get base products that supplier hasn't created products from yet
+    // The correct logic: exclude base products where supplier has already created 
+    // a product that was derived from that base product (not just same name)
+    
+    // First, find all supplier products that were created from base products
+    const supplierProductsFromBase = await Product.find({ 
+      supplier: supplier._id,
+      isBaseProduct: false,
+      createdByAdmin: false,
+      // We need to check if this product was created from a base product
+      // For now, we'll use a different approach since we don't have sourceBaseProduct field
+    }).select('name category subcategory specifications');
+
+    // Get all base products
+    const allBaseProducts = await Product.find({
+      isBaseProduct: true,
+      createdByAdmin: true
+    }).select('name description category subcategory images hsnCode specifications');
+
+    // Better filtering logic: exclude base products only if supplier has an EXACT match
+    // that was clearly derived from a base product (same name, category, and specifications)
+    const availableBaseProducts = allBaseProducts.filter(baseProduct => {
+      // Check if supplier has a product that matches this base product exactly
+      const hasMatchingProduct = supplierProductsFromBase.some(supplierProduct => {
+        return (
+          supplierProduct.name === baseProduct.name &&
+          supplierProduct.category === baseProduct.category &&
+          supplierProduct.subcategory === baseProduct.subcategory &&
+          // Additional check: if specs are similar, it's likely from this base product
+          JSON.stringify(supplierProduct.specifications) === JSON.stringify(baseProduct.specifications)
+        );
+      });
+      
+      return !hasMatchingProduct;
+    });
+
+    console.log(`📊 Found ${allBaseProducts.length} total base products`);
+    console.log(`📊 Supplier has ${supplierProductsFromBase.length} non-base products`);
+    console.log(`📊 Available for pricing: ${availableBaseProducts.length}`);
+
+    res.json({
+      success: true,
+      data: { baseProducts: availableBaseProducts }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in base-products route:', error);
+    next(error);
+  }
+});
+// @route   POST /api/suppliers/products/:productId/pricing
+// @desc    Set pricing for base product (supplier can only set price & delivery time)
+// @access  Private (Supplier)
+// Replace the POST /products/:productId/pricing route (around lines 1252-1330) with this:
+
+// @route   POST /api/suppliers/products/:baseProductId/pricing
+// @desc    Set or update pricing for base product (supplier can only set price & delivery time)
+// @access  Private (Supplier)
+// Replace the POST /products/:productId/pricing route with this:
+
+router.post('/products/:baseProductId/pricing', auth, authorize('supplier'), [
+  param('baseProductId').isMongoId().withMessage('Valid base product ID required'),
+  body('pricing.basePrice').isFloat({ min: 0 }).withMessage('Valid base price required'),
+  body('pricing.minimumQuantity').isFloat({ min: 0.1 }).withMessage('Valid minimum quantity required'),
+  body('deliveryTime').notEmpty().withMessage('Delivery time is required'),
+  body('stock.available').isFloat({ min: 0 }).withMessage('Valid stock quantity required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    const { baseProductId } = req.params;
+    const { pricing, deliveryTime, stock } = req.body;
+
+    // Find the base product
+    const baseProduct = await Product.findOne({
+      _id: baseProductId,
+      isBaseProduct: true,
+      createdByAdmin: true
+    });
+
+    if (!baseProduct) {
+      return next(new ErrorHandler('Base product not found', 404));
+    }
+
+    // ⭐ KEY FIX: Check if supplier already has a product for this base product
+    let supplierProduct = await Product.findOne({
+      supplier: supplier._id,
+      isBaseProduct: false,
+      name: baseProduct.name,
+      category: baseProduct.category,
+      subcategory: baseProduct.subcategory
+    });
+
+    if (supplierProduct) {
+      // 🔄 UPDATE existing product instead of creating new one
+      console.log('🔄 Updating existing supplier product:', supplierProduct._id);
+      
+      supplierProduct.pricing = {
+        basePrice: pricing.basePrice,
+        unit: pricing.unit || baseProduct.pricing.unit,
+        minimumQuantity: pricing.minimumQuantity,
+        includesGST: pricing.includesGST || false,
+        gstRate: pricing.gstRate || 18,
+        transportCost: pricing.transportCost || { included: true, costPerKm: 0 }
+      };
+      
+      supplierProduct.stock = {
+        available: stock.available,
+        reserved: supplierProduct.stock?.reserved || 0,
+        lowStockThreshold: stock.lowStockThreshold || 10
+      };
+      
+      supplierProduct.deliveryTime = deliveryTime;
+      
+      // Reset approval status since pricing changed
+      supplierProduct.isApproved = false;
+      supplierProduct.isActive = true;
+      supplierProduct.approvedAt = null;
+      supplierProduct.approvedBy = null;
+      
+      await supplierProduct.save();
+      
+      res.json({
+        success: true,
+        message: 'Pricing updated successfully. Product pending re-approval.',
+        data: { product: supplierProduct }
+      });
+      
+    } else {
+      // 🆕 CREATE new product only if none exists
+      console.log('🆕 Creating new supplier product for base product:', baseProductId);
+      
+      // Extract supplier-specific data from request body
+      const { brand, specifications: reqSpecs } = req.body;
+      
+      // Build specifications object based on category - ONLY include relevant fields
+      const finalSpecifications = {};
+      
+      // Add category-specific specifications
+      if (baseProduct.category === 'tmt_steel') {
+        if (reqSpecs?.grade) finalSpecifications.grade = reqSpecs.grade;
+        if (reqSpecs?.diameter) finalSpecifications.diameter = reqSpecs.diameter;
+      } else if (baseProduct.category === 'cement') {
+        if (reqSpecs?.cementGrade) finalSpecifications.cementGrade = reqSpecs.cementGrade;
+        if (reqSpecs?.cementType) finalSpecifications.cementType = reqSpecs.cementType;
+      } else if (baseProduct.category === 'bricks_blocks') {
+        if (reqSpecs?.size) finalSpecifications.size = reqSpecs.size;
+      }
+      
+      // Add general specifications if provided
+      if (reqSpecs?.weight) finalSpecifications.weight = reqSpecs.weight;
+      if (reqSpecs?.dimensions) finalSpecifications.dimensions = reqSpecs.dimensions;
+      
+      supplierProduct = new Product({
+        name: baseProduct.name,
+        description: baseProduct.description,
+        category: baseProduct.category,
+        subcategory: baseProduct.subcategory,
+        // ⭐ KEY FIX: Use filtered specifications instead of copying all
+        specifications: finalSpecifications,
+        // ⭐ KEY FIX: Only add brand for categories that require it
+        ...(brand && ['tmt_steel', 'cement', 'bricks_blocks'].includes(baseProduct.category) && { brand }),
+        hsnCode: baseProduct.hsnCode,
+        images: baseProduct.images,
+        supplier: supplier._id,
+        pricing: {
+          basePrice: pricing.basePrice,
+          unit: pricing.unit || baseProduct.pricing?.unit || 'MT',
+          minimumQuantity: pricing.minimumQuantity,
+          includesGST: pricing.includesGST || false,
+          gstRate: pricing.gstRate || 18,
+          transportCost: pricing.transportCost || { included: true, costPerKm: 0 }
+        },
+        stock: {
+          available: stock.available,
+          reserved: 0,
+          lowStockThreshold: stock.lowStockThreshold || 10
+        },
+        deliveryTime,
+        isBaseProduct: false,
+        createdByAdmin: false,
+        adminUploaded: false,
+        supplierCanModify: false,
+        isActive: true,
+        isApproved: false
+      });
+
+      await supplierProduct.save();
+
+      res.status(201).json({
+        success: true,
+        message: 'Pricing set successfully. Product pending approval.',
+        data: { product: supplierProduct }
+      });
+    }
+
+  } catch (error) {
+    next(error);
+  }
+});
+// @route   PUT /api/suppliers/products/:productId/pricing
+// @desc    Update pricing for existing supplier product
+// @access  Private (Supplier)
+router.put('/products/:productId/pricing', auth, authorize('supplier'), [
+  param('productId').isMongoId().withMessage('Valid product ID required'),
+  body('pricing.basePrice').optional().isFloat({ min: 0 }).withMessage('Valid base price required'),
+  body('deliveryTime').optional().notEmpty().withMessage('Delivery time cannot be empty'),
+  body('stock.available').optional().isFloat({ min: 0 }).withMessage('Valid stock quantity required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const supplier = await Supplier.findOne({ user: req.user._id });
+    if (!supplier) {
+      return next(new ErrorHandler('Supplier profile not found', 404));
+    }
+
+    const { productId } = req.params;
+    const { pricing, deliveryTime, stock } = req.body;
+
+    // Find supplier's product
+    const product = await Product.findOne({
+      _id: productId,
+      supplier: supplier._id,
+      isBaseProduct: false
+    });
+
+    if (!product) {
+      return next(new ErrorHandler('Product not found', 404));
+    }
+
+    // Update only allowed fields (pricing, delivery time, stock)
+    if (pricing) {
+      if (pricing.basePrice !== undefined) product.pricing.basePrice = pricing.basePrice;
+      if (pricing.minimumQuantity !== undefined) product.pricing.minimumQuantity = pricing.minimumQuantity;
+      if (pricing.includesGST !== undefined) product.pricing.includesGST = pricing.includesGST;
+      if (pricing.transportCost !== undefined) product.pricing.transportCost = pricing.transportCost;
+    }
+
+    if (deliveryTime) {
+      product.deliveryTime = deliveryTime;
+    }
+
+    if (stock) {
+      if (stock.available !== undefined) product.stock.available = stock.available;
+      if (stock.lowStockThreshold !== undefined) product.stock.lowStockThreshold = stock.lowStockThreshold;
+    }
+
+    await product.save();
+
+    res.json({
+      success: true,
+      message: 'Pricing updated successfully',
+      data: { product }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 // @route   GET /api/suppliers/stats
 // @desc    Get supplier statistics for dashboard
