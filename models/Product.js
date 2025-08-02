@@ -430,6 +430,9 @@ productSchema.statics.getByCategory = function(category, options = {}) {
 };
 
 // Static method to search products
+// Find the searchProducts method around line 433 and replace it with:
+
+// Static method to search products
 productSchema.statics.searchProducts = function(query, options = {}) {
   const {
     limit = 20,
@@ -444,7 +447,9 @@ productSchema.statics.searchProducts = function(query, options = {}) {
   const searchFilter = {
     $text: { $search: query },
     isActive: true,
-    isApproved: true
+    isApproved: true,
+    // 🚫 ONLY SHOW PRODUCTS WITH AVAILABLE STOCK
+    'stock.available': { $gt: 0 }
   };
   
   if (category) searchFilter.category = category;
