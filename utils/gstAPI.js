@@ -398,4 +398,5 @@ module.exports = {
   searchGSTDetails,
   parseGSTData,
   MASTERS_INDIA_CONFIG
+
 };
