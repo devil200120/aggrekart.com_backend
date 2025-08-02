@@ -11,8 +11,6 @@ const router = express.Router();
 // @access  Private (Customer)
 router.get('/', auth, authorize('customer'), async (req, res, next) => {
   try {
-    console.log('🛒 Getting cart for user:', req.user._id);
-    
     let cart = await Cart.findOne({ user: req.user._id })
       .populate({
         path: 'items.product',
@@ -23,26 +21,50 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
       });
 
     if (!cart) {
-      console.log('🛒 No cart found, creating new cart');
-      cart = new Cart({ 
-        user: req.user._id, 
-        items: [],
-        totalAmount: 0,
-        totalItems: 0
-      });
-      await cart.save();
-      console.log('✅ New cart created:', cart._id);
+      try {
+        cart = new Cart({ 
+          user: req.user._id, 
+          items: [],
+          totalAmount: 0,
+          totalItems: 0
+        });
+        await cart.save();
+      } catch (createError) {
+        if (createError.code === 11000) {
+          cart = await Cart.findOne({ user: req.user._id });
+          if (!cart) {
+            await Cart.deleteMany({ user: req.user._id });
+            cart = await Cart.create({ 
+              user: req.user._id, 
+              items: [],
+              totalAmount: 0,
+              totalItems: 0
+            });
+          }
+        } else {
+          throw createError;
+        }
+      }
     }
-
     // Remove expired/inactive products
-    if (cart.removeExpiredItems) {
-      await cart.removeExpiredItems();
+        // Remove expired/inactive products
+    try {
+      if (cart.removeExpiredItems) {
+        await cart.removeExpiredItems();
+      }
+    } catch (error) {
+      console.error('Error removing expired items:', error);
     }
     
     // Validate stock for all items
     let stockIssues = [];
-    if (cart.validateStock) {
-      stockIssues = await cart.validateStock();
+    try {
+      if (cart.validateStock) {
+        stockIssues = await cart.validateStock();
+      }
+    } catch (error) {
+      console.error('Error validating stock:', error);
+      stockIssues = [];
     }
     
     // Ensure all items have proper price structure
@@ -57,6 +79,17 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
         }
       }
     });
+
+    // Recalculate totals
+    try {
+      if (cart.calculateTotals) {
+        await cart.calculateTotals();
+        await cart.save();
+      }
+    } catch (error) {
+      console.error('Error calculating totals:', error);
+      await cart.save();
+    }
 
     // Recalculate totals
     if (cart.calculateTotals) {
