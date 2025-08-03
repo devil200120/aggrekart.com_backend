@@ -9,9 +9,6 @@ const router = express.Router();
 // @route   GET /api/cart
 // @desc    Get user's cart
 // @access  Private (Customer)
-// Update the cart GET route to ensure proper price structure
-
-// Replace the GET route around line 11-38:
 router.get('/', auth, authorize('customer'), async (req, res, next) => {
   try {
     let cart = await Cart.findOne({ user: req.user._id })
@@ -24,71 +21,100 @@ router.get('/', auth, authorize('customer'), async (req, res, next) => {
       });
 
     if (!cart) {
-      cart = new Cart({ user: req.user._id, items: [] });
-      await cart.save();
+      try {
+        cart = new Cart({ 
+          user: req.user._id, 
+          items: [],
+          totalAmount: 0,
+          totalItems: 0
+        });
+        await cart.save();
+      } catch (createError) {
+        if (createError.code === 11000) {
+          cart = await Cart.findOne({ user: req.user._id });
+          if (!cart) {
+            await Cart.deleteMany({ user: req.user._id });
+            cart = await Cart.create({ 
+              user: req.user._id, 
+              items: [],
+              totalAmount: 0,
+              totalItems: 0
+            });
+          }
+        } else {
+          throw createError;
+        }
+      }
     }
-
     // Remove expired/inactive products
-    await cart.removeExpiredItems();
+        // Remove expired/inactive products
+    try {
+      if (cart.removeExpiredItems) {
+        await cart.removeExpiredItems();
+      }
+    } catch (error) {
+      console.error('Error removing expired items:', error);
+    }
     
     // Validate stock for all items
-    const stockIssues = await cart.validateStock();
+    let stockIssues = [];
+    try {
+      if (cart.validateStock) {
+        stockIssues = await cart.validateStock();
+      }
+    } catch (error) {
+      console.error('Error validating stock:', error);
+      stockIssues = [];
+    }
     
     // Ensure all items have proper price structure
     cart.items.forEach(item => {
       if (item.product) {
-        // Ensure priceAtTime is set
         if (!item.priceAtTime && item.product.pricing?.basePrice) {
           item.priceAtTime = item.product.pricing.basePrice;
         }
         
-        // Add price field for frontend compatibility
         if (!item.price) {
           item.price = item.priceAtTime || item.product.pricing?.basePrice || 0;
         }
       }
     });
-    
-    if (cart.isModified()) {
+
+    // Recalculate totals
+    try {
+      if (cart.calculateTotals) {
+        await cart.calculateTotals();
+        await cart.save();
+      }
+    } catch (error) {
+      console.error('Error calculating totals:', error);
       await cart.save();
     }
 
-    // Recalculate totals to ensure accuracy
-    const totalAmount = cart.items.reduce((sum, item) => {
-      const itemPrice = item.priceAtTime || item.price || 0;
-      const itemQuantity = item.quantity || 0;
-      return sum + (itemPrice * itemQuantity);
-    }, 0);
-
-    const totalItems = cart.items.reduce((sum, item) => {
-      return sum + (item.quantity || 0);
-    }, 0);
-
-    // Update cart totals
-    cart.totalAmount = totalAmount;
-    cart.totalItems = totalItems;
-
-    if (cart.isModified()) {
+    // Recalculate totals
+    if (cart.calculateTotals) {
+      await cart.calculateTotals();
       await cart.save();
     }
 
     res.json({
       success: true,
       data: { 
-        cart: {
-          ...cart.toObject(),
-          totalAmount,
-          totalItems
-        },
-        stockIssues: stockIssues.length > 0 ? stockIssues : null
+        cart,
+        stockIssues: stockIssues.length > 0 ? stockIssues : undefined
       }
     });
 
   } catch (error) {
-    console.error('Cart GET error:', error);
-    next(error);
+    console.error('❌ Cart fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve cart',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
+
 // @route   POST /api/cart/items
 // @desc    Add item to cart
 // @access  Private (Customer)
@@ -99,6 +125,9 @@ router.post('/items', auth, authorize('customer'), [
   body('specifications.customRequirements').optional().isString()
 ], async (req, res, next) => {
   try {
+    console.log('🛒 Adding item to cart for user:', req.user._id);
+    console.log('📦 Request data:', req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -110,37 +139,53 @@ router.post('/items', auth, authorize('customer'), [
 
     const { productId, quantity, specifications } = req.body;
 
-    // Find product
+    // Find product with detailed error logging
+    console.log('🔍 Looking for product:', productId);
     const product = await Product.findOne({
       $or: [{ _id: productId }, { productId }],
       isActive: true,
       isApproved: true
-    });
+    }).populate('supplier');
 
     if (!product) {
-      return next(new ErrorHandler('Product not found or not available', 404));
+      console.log('❌ Product not found or not available:', productId);
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or not available'
+      });
     }
+
+    console.log('✅ Product found:', product.name);
 
     // Check minimum quantity
     if (quantity < product.pricing.minimumQuantity) {
-      return next(new ErrorHandler(
-        `Minimum quantity for this product is ${product.pricing.minimumQuantity} ${product.pricing.unit}`,
-        400
-      ));
+      return res.status(400).json({
+        success: false,
+        message: `Minimum quantity for this product is ${product.pricing.minimumQuantity} ${product.pricing.unit}`
+      });
     }
 
     // Check stock availability
-    if (!product.isInStock(quantity)) {
-      return next(new ErrorHandler(
-`Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`,
-        400
-      ));
+    if (product.stock && !product.isInStock(quantity)) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`
+      });
     }
 
-    // Find or create cart
+    // Find or create cart with better error handling
     let cart = await Cart.findOne({ user: req.user._id });
+    
     if (!cart) {
-      cart = new Cart({ user: req.user._id, items: [] });
+      console.log('🛒 Creating new cart for user:', req.user._id);
+      cart = new Cart({ 
+        user: req.user._id, 
+        items: [],
+        totalAmount: 0,
+        totalItems: 0
+      });
+      await cart.save();
+      console.log('✅ New cart created:', cart._id);
     }
 
     // Check if item already exists in cart
@@ -152,15 +197,16 @@ router.post('/items', auth, authorize('customer'), [
       // Update existing item
       const newQuantity = cart.items[existingItemIndex].quantity + quantity;
       
-      if (!product.isInStock(newQuantity)) {
-        return next(new ErrorHandler(
-          `Cannot add more items. Total quantity would exceed available stock.`,
-          400
-        ));
+      if (product.stock && !product.isInStock(newQuantity)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot add more items. Total quantity would exceed available stock.'
+        });
       }
       
       cart.items[existingItemIndex].quantity = newQuantity;
       cart.items[existingItemIndex].specifications = specifications || {};
+      console.log('📝 Updated existing cart item');
     } else {
       // Add new item
       cart.items.push({
@@ -169,8 +215,13 @@ router.post('/items', auth, authorize('customer'), [
         priceAtTime: product.pricing.basePrice,
         specifications: specifications || {}
       });
+      console.log('➕ Added new item to cart');
     }
 
+    // Calculate totals
+    if (cart.calculateTotals) {
+      await cart.calculateTotals();
+    }
     await cart.save();
 
     // Populate the cart for response
@@ -182,6 +233,8 @@ router.post('/items', auth, authorize('customer'), [
       }
     });
 
+    console.log('✅ Cart updated successfully');
+
     res.json({
       success: true,
       message: 'Item added to cart successfully',
@@ -189,7 +242,12 @@ router.post('/items', auth, authorize('customer'), [
     });
 
   } catch (error) {
-    next(error);
+    console.error('❌ Cart add item error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add item to cart',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -215,36 +273,49 @@ router.put('/items/:itemId', auth, authorize('customer'), [
 
     const cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
-      return next(new ErrorHandler('Cart not found', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Cart not found'
+      });
     }
 
     const itemIndex = cart.items.findIndex(item => item._id.toString() === itemId);
     if (itemIndex === -1) {
-      return next(new ErrorHandler('Item not found in cart', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found in cart'
+      });
     }
 
-    // Get product details
+    // Get product details for validation
     const product = await Product.findById(cart.items[itemIndex].product);
     if (!product) {
-      return next(new ErrorHandler('Product not found', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
     }
 
     // Validate quantity
     if (quantity < product.pricing.minimumQuantity) {
-      return next(new ErrorHandler(
-        `Minimum quantity for this product is ${product.pricing.minimumQuantity} ${product.pricing.unit}`,
-        400
-      ));
+      return res.status(400).json({
+        success: false,
+        message: `Minimum quantity for this product is ${product.pricing.minimumQuantity} ${product.pricing.unit}`
+      });
     }
 
-    if (!product.isInStock(quantity)) {
-      return next(new ErrorHandler(
-`Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`,        400
-      ));
+    if (product.stock && !product.isInStock(quantity)) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient stock. Available: ${product.getAvailableStock()} ${product.pricing.unit}`
+      });
     }
 
     // Update quantity
     cart.items[itemIndex].quantity = quantity;
+    if (cart.calculateTotals) {
+      await cart.calculateTotals();
+    }
     await cart.save();
 
     // Populate the cart for response
@@ -263,7 +334,12 @@ router.put('/items/:itemId', auth, authorize('customer'), [
     });
 
   } catch (error) {
-    next(error);
+    console.error('❌ Cart update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update cart item',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -287,15 +363,24 @@ router.delete('/items/:itemId', auth, authorize('customer'), [
 
     const cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
-      return next(new ErrorHandler('Cart not found', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Cart not found'
+      });
     }
 
     const itemIndex = cart.items.findIndex(item => item._id.toString() === itemId);
     if (itemIndex === -1) {
-      return next(new ErrorHandler('Item not found in cart', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found in cart'
+      });
     }
 
     cart.items.splice(itemIndex, 1);
+    if (cart.calculateTotals) {
+      await cart.calculateTotals();
+    }
     await cart.save();
 
     res.json({
@@ -305,7 +390,12 @@ router.delete('/items/:itemId', auth, authorize('customer'), [
     });
 
   } catch (error) {
-    next(error);
+    console.error('❌ Cart remove item error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove item from cart',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -316,10 +406,16 @@ router.delete('/', auth, authorize('customer'), async (req, res, next) => {
   try {
     const cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
-      return next(new ErrorHandler('Cart not found', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Cart not found'
+      });
     }
 
     cart.items = [];
+    if (cart.calculateTotals) {
+      await cart.calculateTotals();
+    }
     await cart.save();
 
     res.json({
@@ -329,7 +425,12 @@ router.delete('/', auth, authorize('customer'), async (req, res, next) => {
     });
 
   } catch (error) {
-    next(error);
+    console.error('❌ Cart clear error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear cart',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -342,12 +443,21 @@ router.post('/validate', auth, authorize('customer'), canPlaceOrders, async (req
       .populate('items.product');
 
     if (!cart || cart.items.length === 0) {
-      return next(new ErrorHandler('Cart is empty', 400));
+      return res.status(400).json({
+        success: false,
+        message: 'Cart is empty'
+      });
     }
 
     // Validate all items
-    await cart.removeExpiredItems();
-    const stockIssues = await cart.validateStock();
+    if (cart.removeExpiredItems) {
+      await cart.removeExpiredItems();
+    }
+    
+    let stockIssues = [];
+    if (cart.validateStock) {
+      stockIssues = await cart.validateStock();
+    }
     
     if (stockIssues.length > 0) {
       return res.status(400).json({
@@ -372,7 +482,6 @@ router.post('/validate', auth, authorize('customer'), canPlaceOrders, async (req
       supplierGroups[supplierId].subtotal += item.quantity * item.priceAtTime;
     });
 
-    // Note: Multiple suppliers will require multiple orders
     const multipleSuppliers = Object.keys(supplierGroups).length > 1;
 
     res.json({
@@ -388,7 +497,12 @@ router.post('/validate', auth, authorize('customer'), canPlaceOrders, async (req
     });
 
   } catch (error) {
-    next(error);
+    console.error('❌ Cart validation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate cart',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
