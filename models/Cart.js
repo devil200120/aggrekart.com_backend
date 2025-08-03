@@ -98,7 +98,7 @@ cartSchema.methods.validateStock = async function() {
         });
       }
       
-      if (item.quantity < product.pricing.minimumQuantity) {
+      if (product.pricing && item.quantity < (product.pricing.minimumQuantity || 0)) { 
         stockIssues.push({
           productId: item.product,
           productName: product.name,
@@ -112,5 +112,25 @@ cartSchema.methods.validateStock = async function() {
   
   return stockIssues;
 };
+// Add this method before the module.exports line:
+
+// Method to calculate cart totals
+cartSchema.methods.calculateTotals = async function() {
+  let totalAmount = 0;
+  let totalItems = 0;
+  
+  for (let item of this.items) {
+    if (item.quantity && item.priceAtTime && !isNaN(item.quantity) && !isNaN(item.priceAtTime)) {
+      totalAmount += item.quantity * item.priceAtTime;
+      totalItems += item.quantity;
+    }
+  }
+  
+  this.totalAmount = Math.round(totalAmount * 100) / 100;
+  this.totalItems = totalItems;
+  
+  return { totalAmount: this.totalAmount, totalItems: this.totalItems };
+};
+
 
 module.exports = mongoose.model('Cart', cartSchema);
