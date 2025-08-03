@@ -6,14 +6,23 @@ const orderItemSchema = new mongoose.Schema({
     ref: 'Product',
     required: true
   },
-  productSnapshot: {
+    productSnapshot: {
     name: String,
     description: String,
     category: String,
     subcategory: String,
     brand: String,
     hsnCode: String,
-    imageUrl: String
+    imageUrl: String,
+    images: [{
+      url: String,
+      alt: String,
+      isPrimary: {
+        type: Boolean,
+        default: false
+      },
+      cloudinaryId: String
+    }]
   },
   quantity: {
     type: Number,
