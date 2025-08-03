@@ -18,7 +18,7 @@ const supplierSchema = new mongoose.Schema({
 gstNumber: {
   type: String,
   sparse: true, // Allows multiple null values, but unique non-null values
-  unique: true,
+  
   validate: {
     validator: function(v) {
       // Allow empty/null GST numbers
@@ -160,7 +160,7 @@ supplierControls: {
   pricing: {
     basePrice: {
       type: Number,
-      required: true
+      required: false
     },
     lastUpdated: {
       type: Date,
@@ -411,7 +411,7 @@ createdByAdmin: {
 });
 
 // Indexes
-supplierSchema.index({ gstNumber: 1 });
+// supplierSchema.index({ gstNumber: 1 });
 supplierSchema.index({ 'dispatchLocation.coordinates': '2dsphere' });
 supplierSchema.index({ isApproved: 1, isActive: 1 });
 supplierSchema.index({ categories: 1 });
