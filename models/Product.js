@@ -44,7 +44,8 @@ specifications: {
   },
   diameter: {
     type: String,
-    enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm'],
+        enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm', '6', '8', '10', '12', '16', '20', '25', '32'],
+
     required: function() { 
       return this.category === 'tmt_steel' && !(this.isBaseProduct && this.createdByAdmin); 
     }
@@ -166,9 +167,7 @@ specifications: {
   }],
    hsnCode: {
     type: String,
-    required: function() {
-      return !(this.isBaseProduct && this.createdByAdmin);
-    }
+    required: false
   },
     // Admin control fields
   isBaseProduct: {
@@ -430,6 +429,9 @@ productSchema.statics.getByCategory = function(category, options = {}) {
 };
 
 // Static method to search products
+// Find the searchProducts method around line 433 and replace it with:
+
+// Static method to search products
 productSchema.statics.searchProducts = function(query, options = {}) {
   const {
     limit = 20,
@@ -444,7 +446,9 @@ productSchema.statics.searchProducts = function(query, options = {}) {
   const searchFilter = {
     $text: { $search: query },
     isActive: true,
-    isApproved: true
+    isApproved: true,
+    // 🚫 ONLY SHOW PRODUCTS WITH AVAILABLE STOCK
+    
   };
   
   if (category) searchFilter.category = category;
@@ -462,6 +466,31 @@ productSchema.statics.searchProducts = function(query, options = {}) {
     .limit(limit);
 };
 // Add these methods before module.exports (around line 390):
+
+// Method to get display price
+productSchema.methods.getDisplayPrice = function() {
+  return this.pricing?.basePrice || 0;
+};
+
+// Method to get price with GST
+productSchema.methods.getPriceWithGST = function() {
+  const basePrice = this.pricing?.basePrice || 0;
+  if (this.pricing?.includesGST) {
+    return basePrice;
+  }
+  const gstRate = this.pricing?.gstRate || 18;
+  return basePrice * (1 + gstRate / 100);
+};
+
+// Virtual for frontend compatibility
+productSchema.virtual('price').get(function() {
+  return this.pricing?.basePrice || 0;
+});
+
+// Ensure virtual fields are serialized
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
+
 
 // Method to get display price
 productSchema.methods.getDisplayPrice = function() {
