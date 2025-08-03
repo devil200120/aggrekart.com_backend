@@ -433,4 +433,16 @@ userSchema.statics.findByPhoneAndValidatePassword = async function(phoneNumber, 
   return user;
 };
 
+
+// Static method to support phone + password login
+userSchema.statics.findByPhoneAndValidatePassword = async function(phoneNumber, password) {
+  const user = await this.findByPhone(phoneNumber);
+  if (!user) return null;
+  
+  const isPasswordValid = await user.comparePassword(password);
+  if (!isPasswordValid) return null;
+  
+  return user;
+};
+
 module.exports = mongoose.model('User', userSchema);
