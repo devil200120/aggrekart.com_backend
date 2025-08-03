@@ -154,8 +154,17 @@ router.post('/checkout', auth, authorize('customer'), [
             subcategory: item.product.subcategory,
             unit: item.product.pricing.unit,
             brand: item.product.brand || 'Unknown',
-            imageUrl: item.product.images && item.product.images.length > 0 ? item.product.images[0] : null
-          }
+ imageUrl: (() => {
+              if (item.product.images && item.product.images.length > 0) {
+                const primaryImage = item.product.images.find(img => img.isPrimary && img.url);
+                if (primaryImage) return primaryImage.url;
+                const firstImage = item.product.images.find(img => img.url);
+                if (firstImage) return firstImage.url;
+              }
+              return null;
+            })(),
+            images: item.product.images || []
+                   }
         })),
         
         // FIXED: Pricing structure matching the model
