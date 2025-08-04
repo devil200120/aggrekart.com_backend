@@ -12,6 +12,7 @@ const { uploadProductImages } = require('../utils/cloudinary');
 const Analytics = require('../utils/analytics');
 const ReportGenerator = require('../utils/reports');
 
+const mongoose = require('mongoose'); // ADD THIS LINE
 
 // @route   GET /api/admin/dashboard
 // @desc    Get admin dashboard statistics
@@ -3548,7 +3549,190 @@ router.put('/products/:productId/featured', auth, authorize('admin'), [
     next(error);
   }
 });
+// Add this BEFORE the existing DELETE route
 
+// @route   GET /api/admin/products/:productId
+// @desc    Get detailed product information for admin view
+// @access  Private (Admin)
+// Replace the entire problematic route (lines 3555-3650) with this working version:
+
+// @route   GET /api/admin/products/:productId
+// @desc    Get detailed product information for admin view
+// @access  Private (Admin)
+// Replace your current route with this corrected version:
+
+// @route   GET /api/admin/products/:productId
+// @desc    Get detailed product information for admin view
+// @access  Private (Admin)
+router.get('/products/:productId', auth, authorize('admin'), [
+  param('productId').isMongoId().withMessage('Valid product ID required')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { productId } = req.params;
+    console.log('🔍 Fetching product details for ID:', productId);
+
+    // Get product with supplier information only (removed baseProduct populate)
+    const product = await Product.findById(productId)
+      .populate('supplier', 'companyName email phoneNumber businessAddress rating supplierId tradeOwnerName')
+      .lean();
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+
+    console.log('✅ Product found:', product.name);
+
+    // Get order statistics for this product - SIMPLIFIED VERSION
+    let orderStats = [];
+    try {
+      orderStats = await Order.aggregate([
+        { $unwind: '$items' },
+        { $match: { 'items.product': productId } },
+        {
+          $group: {
+            _id: null,
+            totalOrders: { $sum: 1 },
+            totalQuantity: { $sum: '$items.quantity' },
+            totalRevenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } },
+            avgOrderValue: { $avg: { $multiply: ['$items.quantity', '$items.price'] } }
+          }
+        }
+      ]);
+      console.log('✅ Order stats calculated');
+    } catch (statsError) {
+      console.error('⚠️ Order stats error:', statsError);
+    }
+
+    // Get recent orders for this product
+    let recentOrders = [];
+    try {
+      recentOrders = await Order.find({
+        'items.product': productId
+      })
+      .populate('user', 'name email phoneNumber')
+      .select('orderNumber status createdAt user items totalAmount')
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+      console.log('✅ Recent orders found:', recentOrders.length);
+    } catch (ordersError) {
+      console.error('⚠️ Recent orders error:', ordersError);
+    }
+
+    // Format the response with safe property access
+    const productDetails = {
+      // Basic product info
+      _id: product._id,
+      name: product.name || 'Unknown Product',
+      description: product.description || 'No description available',
+      category: product.category || 'Uncategorized',
+      subcategory: product.subcategory || null,
+      brand: product.brand || null,
+      images: product.images || [],
+      
+      // Pricing and availability
+      pricing: product.pricing || {},
+      availability: product.availability || {},
+      
+      // Product specifications
+      specifications: product.specifications || {},
+      
+      // Status and approval info
+      isActive: product.isActive !== false,
+      isApproved: product.isApproved === true,
+      isFeatured: product.isFeatured === true,
+      isBaseProduct: product.isBaseProduct === true,
+      createdByAdmin: product.createdByAdmin === true,
+      approvalStatus: product.approvalStatus || 'pending',
+      rejectionReason: product.rejectionReason || null,
+      
+      // Timestamps
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+      
+      // Supplier information with safe access
+      supplier: product.supplier ? {
+        id: product.supplier._id,
+        companyName: product.supplier.companyName || 'Unknown Company',
+        tradeOwnerName: product.supplier.tradeOwnerName || 'Unknown Owner',
+        email: product.supplier.email || 'No email',
+        phoneNumber: product.supplier.phoneNumber || 'No phone',
+        businessAddress: product.supplier.businessAddress || 'No address',
+        rating: product.supplier.rating || { average: 0, count: 0 },
+        supplierId: product.supplier.supplierId || 'Unknown'
+      } : null,
+      
+      // Base product info - null since there's no baseProduct relationship
+      baseProduct: null,
+      
+      // Additional details with safe access
+      tags: product.tags || [],
+      seoTitle: product.seoTitle || '',
+      seoDescription: product.seoDescription || '',
+      
+      // Order statistics with safe access
+      statistics: orderStats[0] || {
+        totalOrders: 0,
+        totalQuantity: 0,
+        totalRevenue: 0,
+        avgOrderValue: 0
+      },
+      
+      // Recent orders with safe formatting
+      recentOrders: recentOrders.map(order => {
+        const productItem = order.items ? order.items.find(item => 
+          item.product && item.product.toString() === productId
+        ) : null;
+        
+        return {
+          orderNumber: order.orderNumber || 'Unknown',
+          status: order.status || 'unknown',
+          createdAt: order.createdAt,
+          customer: order.user ? {
+            name: order.user.name || 'Unknown Customer',
+            email: order.user.email || 'No email',
+            phone: order.user.phoneNumber || 'No phone'
+          } : null,
+          quantity: productItem ? (productItem.quantity || 0) : 0,
+          price: productItem ? (productItem.price || 0) : 0,
+          totalAmount: order.totalAmount || 0
+        };
+      })
+    };
+
+    console.log('✅ Product details formatted successfully');
+
+    res.json({
+      success: true,
+      data: productDetails
+    });
+
+  } catch (error) {
+    console.error('❌ Get product details error:', error);
+    
+    // Send a more informative error response
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format'
+      });
+    }
+    
+    next(error);
+  }
+});
 // @route   DELETE /api/admin/products/:productId
 // @desc    Delete a product (admin only)
 // @access  Private (Admin)
