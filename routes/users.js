@@ -169,12 +169,47 @@ router.put('/addresses/:addressId', auth, [
     const { addressId } = req.params;
     const { address, city, state, pincode, type, isDefault } = req.body;
     
+    console.log(`🔍 [ADDRESS UPDATE] User: ${req.user._id}, AddressID: ${addressId}`);
+    console.log(`📝 [ADDRESS UPDATE] Data:`, { address, city, state, pincode, type, isDefault });
+    
     const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      console.log(`❌ [ADDRESS UPDATE] User not found: ${req.user._id}`);
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    console.log(`👤 [ADDRESS UPDATE] User: ${user.name}, Total addresses: ${user.addresses.length}`);
+    console.log(`📍 [ADDRESS UPDATE] Available addresses:`, user.addresses.map(addr => ({
+      id: addr._id.toString(),
+      address: addr.address?.substring(0, 30) + '...',
+      type: addr.type || 'home'
+    })));
+    
     const addressToUpdate = user.addresses.id(addressId);
     
     if (!addressToUpdate) {
-      return next(new ErrorHandler('Address not found', 404));
+      console.log(`❌ [ADDRESS UPDATE] Address ${addressId} not found`);
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found',
+        debug: {
+          requestedAddressId: addressId,
+          availableAddresses: user.addresses.map(addr => ({
+            id: addr._id.toString(),
+            address: addr.address,
+            city: addr.city,
+            type: addr.type || 'home',
+            isDefault: addr.isDefault
+          }))
+        }
+      });
     }
+    
+    console.log(`✅ [ADDRESS UPDATE] Found address: ${addressToUpdate.address}`);
     
     // If setting as default, remove default from other addresses
     if (isDefault) {
@@ -183,17 +218,20 @@ router.put('/addresses/:addressId', auth, [
           addr.isDefault = false;
         }
       });
+      console.log(`🔄 [ADDRESS UPDATE] Set as default, cleared other defaults`);
     }
     
     // Update address fields
-    if (address) addressToUpdate.address = address;
-    if (city) addressToUpdate.city = city;
-    if (state) addressToUpdate.state = state;
-    if (pincode) addressToUpdate.pincode = pincode;
-    if (type) addressToUpdate.type = type;
+    if (address !== undefined) addressToUpdate.address = address;
+    if (city !== undefined) addressToUpdate.city = city;
+    if (state !== undefined) addressToUpdate.state = state;
+    if (pincode !== undefined) addressToUpdate.pincode = pincode;
+    if (type !== undefined) addressToUpdate.type = type;
     if (isDefault !== undefined) addressToUpdate.isDefault = isDefault;
     
     await user.save();
+    
+    console.log(`✅ [ADDRESS UPDATE] Successfully updated address for ${user.name}`);
     
     res.json({
       success: true,
@@ -201,6 +239,7 @@ router.put('/addresses/:addressId', auth, [
       data: { address: addressToUpdate }
     });
   } catch (error) {
+    console.error(`❌ [ADDRESS UPDATE] Error:`, error);
     next(error);
   }
 });
