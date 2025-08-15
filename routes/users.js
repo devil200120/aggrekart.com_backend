@@ -4,8 +4,9 @@ const { auth, authorize } = require('../middleware/auth');
 const User = require('../models/User');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendWelcomeEmail } = require('../utils/notifications');
+const geocodingService = require('../utils/geocoding');
 const router = express.Router();
-
+const ReportGenerator = require('../utils/reports');
 // @route   GET /api/users/profile
 // @desc    Get user profile with completion status
 // @access  Private
@@ -98,7 +99,9 @@ router.post('/addresses', auth, [
   body('city').notEmpty().withMessage('City is required'),
   body('state').notEmpty().withMessage('State is required'),
   body('pincode').matches(/^[1-9][0-9]{5}$/).withMessage('Please provide a valid pincode'),
-  body('type').optional().isIn(['home', 'work', 'other']).withMessage('Invalid address type')
+  body('type').optional().isIn(['home', 'work', 'other']).withMessage('Invalid address type'),
+  body('coordinates.latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('Valid latitude required'),
+  body('coordinates.longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('Valid longitude required')
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -110,8 +113,11 @@ router.post('/addresses', auth, [
       });
     }
 
-    const { address, city, state, pincode, type, isDefault } = req.body;
+    const { address, city, state, pincode, type, isDefault, coordinates } = req.body;
     
+    console.log('📍 Adding address with coordinate detection...');
+    console.log('Address details:', { address, city, state, pincode });
+
     const user = await User.findById(req.user._id);
     
     // If this is set as default, remove default from other addresses
@@ -120,28 +126,79 @@ router.post('/addresses', auth, [
         addr.isDefault = false;
       });
     }
+
+    let finalCoordinates = {};
+    let geocodingInfo = null;
+
+    try {
+      // Priority 1: Use manual coordinates if provided (from frontend GPS)
+      if (coordinates && coordinates.latitude && coordinates.longitude) {
+        if (geocodingService.validateCoordinates(coordinates.latitude, coordinates.longitude)) {
+          finalCoordinates = {
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude
+          };
+          geocodingInfo = {
+            source: 'manual',
+            method: 'user_provided'
+          };
+          console.log('✅ Using manual coordinates:', finalCoordinates);
+        }
+      }
+
+      // Priority 2: Geocode the address automatically
+      if (!finalCoordinates.latitude) {
+        console.log('🔍 Auto-geocoding address...');
+        const addressComponents = { address, city, state, pincode };
+        const result = await geocodingService.getCoordinates(addressComponents);
+        
+        if (result && result.latitude && result.longitude) {
+          finalCoordinates = {
+            latitude: result.latitude,
+            longitude: result.longitude
+          };
+          geocodingInfo = {
+            source: result.source,
+            method: 'geocoded',
+            formattedAddress: result.formattedAddress,
+            geocodedAt: new Date()
+          };
+          console.log(`✅ Address geocoded: [${result.latitude}, ${result.longitude}] (${result.source})`);
+        }
+      }
+    } catch (geocodeError) {
+      console.error('❌ Geocoding failed:', geocodeError.message);
+      // Continue without coordinates - better than failing the entire request
+    }
     
-    // If this is the first address, make it default
+    // Create new address with coordinates
     const newAddress = {
       address,
       city,
       state,
       pincode,
       type: type || 'home',
-      isDefault: isDefault || user.addresses.length === 0
+      isDefault: isDefault || user.addresses.length === 0,
+      coordinates: finalCoordinates,
+      geocodingInfo
     };
     
     user.addresses.push(newAddress);
     await user.save();
     
+    console.log(`✅ Address added successfully for ${user.name}`);
+    console.log('Final coordinates stored:', finalCoordinates);
+    
     res.status(201).json({
       success: true,
       message: 'Address added successfully',
       data: { 
-        address: user.addresses[user.addresses.length - 1]
+        address: user.addresses[user.addresses.length - 1],
+        geocoding: geocodingInfo
       }
     });
   } catch (error) {
+    console.error('❌ Error adding address:', error);
     next(error);
   }
 });
@@ -154,7 +211,9 @@ router.put('/addresses/:addressId', auth, [
   body('city').optional().notEmpty().withMessage('City cannot be empty'),
   body('state').optional().notEmpty().withMessage('State cannot be empty'),
   body('pincode').optional().matches(/^[1-9][0-9]{5}$/).withMessage('Please provide a valid pincode'),
-  body('type').optional().isIn(['home', 'work', 'other']).withMessage('Invalid address type')
+  body('type').optional().isIn(['home', 'work', 'other']).withMessage('Invalid address type'),
+  body('coordinates.latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('Valid latitude required'),
+  body('coordinates.longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('Valid longitude required')
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -167,15 +226,39 @@ router.put('/addresses/:addressId', auth, [
     }
 
     const { addressId } = req.params;
-    const { address, city, state, pincode, type, isDefault } = req.body;
+    const { address, city, state, pincode, type, isDefault, coordinates } = req.body;
+    
+    console.log(`🔍 [ADDRESS UPDATE] User: ${req.user._id}, AddressID: ${addressId}`);
+    console.log(`📝 [ADDRESS UPDATE] Data:`, { address, city, state, pincode, type, isDefault });
     
     const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     const addressToUpdate = user.addresses.id(addressId);
     
     if (!addressToUpdate) {
-      return next(new ErrorHandler('Address not found', 404));
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found'
+      });
     }
     
+    console.log(`✅ [ADDRESS UPDATE] Found address: ${addressToUpdate.address}`);
+    
+    // Store old address for comparison
+    const oldAddress = {
+      address: addressToUpdate.address,
+      city: addressToUpdate.city,
+      state: addressToUpdate.state,
+      pincode: addressToUpdate.pincode
+    };
+
     // If setting as default, remove default from other addresses
     if (isDefault) {
       user.addresses.forEach(addr => {
@@ -183,24 +266,186 @@ router.put('/addresses/:addressId', auth, [
           addr.isDefault = false;
         }
       });
+      console.log(`🔄 [ADDRESS UPDATE] Set as default, cleared other defaults`);
     }
-    
+
     // Update address fields
-    if (address) addressToUpdate.address = address;
-    if (city) addressToUpdate.city = city;
-    if (state) addressToUpdate.state = state;
-    if (pincode) addressToUpdate.pincode = pincode;
-    if (type) addressToUpdate.type = type;
+    if (address !== undefined) addressToUpdate.address = address;
+    if (city !== undefined) addressToUpdate.city = city;
+    if (state !== undefined) addressToUpdate.state = state;
+    if (pincode !== undefined) addressToUpdate.pincode = pincode;
+    if (type !== undefined) addressToUpdate.type = type;
     if (isDefault !== undefined) addressToUpdate.isDefault = isDefault;
+
+    // Check if address components changed to determine if we need to re-geocode
+    const addressChanged = (
+      oldAddress.address !== addressToUpdate.address ||
+      oldAddress.city !== addressToUpdate.city ||
+      oldAddress.state !== addressToUpdate.state ||
+      oldAddress.pincode !== addressToUpdate.pincode
+    );
+
+    let geocodingInfo = null;
+    let finalCoordinates = addressToUpdate.coordinates || {};
+
+    // Update coordinates if address changed or new coordinates provided
+    if (addressChanged || coordinates) {
+      try {
+        // Priority 1: Use manual coordinates if provided
+        if (coordinates && coordinates.latitude && coordinates.longitude) {
+          if (geocodingService.validateCoordinates(coordinates.latitude, coordinates.longitude)) {
+            finalCoordinates = {
+              latitude: coordinates.latitude,
+              longitude: coordinates.longitude
+            };
+            geocodingInfo = {
+              source: 'manual',
+              method: 'user_provided',
+              updatedAt: new Date()
+            };
+            console.log('✅ Using updated manual coordinates:', finalCoordinates);
+          }
+        } 
+        // Priority 2: Re-geocode if address changed
+        else if (addressChanged) {
+          console.log('🔍 Address changed, re-geocoding...');
+          
+          const addressComponents = {
+            address: addressToUpdate.address,
+            city: addressToUpdate.city,
+            state: addressToUpdate.state,
+            pincode: addressToUpdate.pincode
+          };
+
+          const result = await geocodingService.getCoordinates(addressComponents);
+          
+          if (result && result.latitude && result.longitude) {
+            finalCoordinates = {
+              latitude: result.latitude,
+              longitude: result.longitude
+            };
+            geocodingInfo = {
+              source: result.source,
+              method: 'geocoded',
+              formattedAddress: result.formattedAddress,
+              geocodedAt: new Date()
+            };
+            console.log(`✅ Re-geocoded: [${result.latitude}, ${result.longitude}] (${result.source})`);
+          } else {
+            console.log('⚠️ Re-geocoding failed, keeping existing coordinates');
+          }
+        }
+      } catch (geocodeError) {
+        console.error('❌ Geocoding error:', geocodeError.message);
+        // Continue with existing coordinates
+      }
+    }
+
+    // Update coordinates and geocoding info
+    addressToUpdate.coordinates = finalCoordinates;
+    if (geocodingInfo) {
+      addressToUpdate.geocodingInfo = geocodingInfo;
+    }
     
     await user.save();
     
+    console.log(`✅ [ADDRESS UPDATE] Successfully updated address for ${user.name}`);
+    console.log('Updated coordinates:', finalCoordinates);
+
     res.json({
       success: true,
       message: 'Address updated successfully',
-      data: { address: addressToUpdate }
+      data: { 
+        address: addressToUpdate,
+        geocoding: geocodingInfo
+      }
     });
   } catch (error) {
+    console.error(`❌ [ADDRESS UPDATE] Error:`, error);
+    next(error);
+  }
+});
+
+// @route   PUT /api/users/addresses/:addressId/geocode
+// @desc    Manually geocode/refresh coordinates for an existing address
+// @access  Private
+router.put('/addresses/:addressId/geocode', auth, async (req, res, next) => {
+  try {
+    const { addressId } = req.params;
+    
+    console.log(`🔍 [MANUAL GEOCODE] User: ${req.user._id}, AddressID: ${addressId}`);
+    
+    const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const addressToGeocode = user.addresses.id(addressId);
+    
+    if (!addressToGeocode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found'
+      });
+    }
+    
+    console.log(`📍 [MANUAL GEOCODE] Geocoding: ${addressToGeocode.address}, ${addressToGeocode.city}`);
+
+    try {
+      const addressComponents = {
+        address: addressToGeocode.address,
+        city: addressToGeocode.city,
+        state: addressToGeocode.state,
+        pincode: addressToGeocode.pincode
+      };
+
+      const result = await geocodingService.getCoordinates(addressComponents);
+      
+      if (result && result.latitude && result.longitude) {
+        addressToGeocode.coordinates = {
+          latitude: result.latitude,
+          longitude: result.longitude
+        };
+        addressToGeocode.geocodingInfo = {
+          source: result.source,
+          method: 'manual_refresh',
+          formattedAddress: result.formattedAddress,
+          geocodedAt: new Date()
+        };
+        
+        await user.save();
+        
+        console.log(`✅ [MANUAL GEOCODE] Success: [${result.latitude}, ${result.longitude}] (${result.source})`);
+
+        res.json({
+          success: true,
+          message: 'Address coordinates updated successfully',
+          data: {
+            address: addressToGeocode,
+            geocoding: addressToGeocode.geocodingInfo
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Failed to geocode address'
+        });
+      }
+    } catch (geocodeError) {
+      console.error('❌ [MANUAL GEOCODE] Error:', geocodeError.message);
+      res.status(400).json({
+        success: false,
+        message: 'Geocoding failed',
+        error: geocodeError.message
+      });
+    }
+
+  } catch (error) {
+    console.error(`❌ [MANUAL GEOCODE] Error:`, error);
     next(error);
   }
 });
@@ -497,48 +742,34 @@ router.post('/deactivate', auth, [
 // @route   POST /api/users/request-data-export
 // @desc    Request user data export
 // @access  Private
+// @route   POST /api/users/request-data-export
+// @desc    Instant user data export
+// @access  Private
+// @route   POST /api/users/request-data-export
+// @desc    Instant user data export as PDF
+// @access  Private
 router.post('/request-data-export', auth, async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
     
-    // Check if there's already a pending request
-    const pendingRequest = user.dataExportRequests.find(req => 
-      req.status === 'pending' || req.status === 'processing'
-    );
+    // Generate PDF using existing ReportGenerator
+    const pdfBuffer = await ReportGenerator.generateUserDataPDF(user);
     
-    if (pendingRequest) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data export request already in progress'
-      });
-    }
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${user.role}-data-${Date.now()}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
     
-    // Add new export request
-    const exportRequest = {
-      requestedAt: new Date(),
-      status: 'pending',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-    };
+    // Send PDF buffer
+    res.send(pdfBuffer);
     
-    user.dataExportRequests.push(exportRequest);
-    await user.save();
-    
-    // TODO: Implement actual data export logic
-    // This would typically involve:
-    // 1. Gathering all user data
-    // 2. Generating a downloadable file
-    // 3. Sending email notification
-    
-    res.json({
-      success: true,
-      message: 'Data export request submitted successfully. You will receive an email when ready.',
-      data: {
-        requestId: exportRequest._id,
-        estimatedTime: '24-48 hours'
-      }
-    });
   } catch (error) {
-    next(error);
+    console.error('PDF export error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export data as PDF',
+      error: error.message
+    });
   }
 });
 

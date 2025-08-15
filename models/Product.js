@@ -44,7 +44,8 @@ specifications: {
   },
   diameter: {
     type: String,
-    enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm'],
+        enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm', '6', '8', '10', '12', '16', '20', '25', '32'],
+
     required: function() { 
       return this.category === 'tmt_steel' && !(this.isBaseProduct && this.createdByAdmin); 
     }
@@ -166,9 +167,7 @@ specifications: {
   }],
    hsnCode: {
     type: String,
-    required: function() {
-      return !(this.isBaseProduct && this.createdByAdmin);
-    }
+    required: false
   },
     // Admin control fields
   isBaseProduct: {
@@ -430,6 +429,9 @@ productSchema.statics.getByCategory = function(category, options = {}) {
 };
 
 // Static method to search products
+// Find the searchProducts method around line 433 and replace it with:
+
+// Static method to search products
 productSchema.statics.searchProducts = function(query, options = {}) {
   const {
     limit = 20,
@@ -444,7 +446,9 @@ productSchema.statics.searchProducts = function(query, options = {}) {
   const searchFilter = {
     $text: { $search: query },
     isActive: true,
-    isApproved: true
+    isApproved: true,
+    // 🚫 ONLY SHOW PRODUCTS WITH AVAILABLE STOCK
+    
   };
   
   if (category) searchFilter.category = category;
@@ -482,6 +486,138 @@ productSchema.methods.getPriceWithGST = function() {
 productSchema.virtual('price').get(function() {
   return this.pricing?.basePrice || 0;
 });
+
+// Ensure virtual fields are serialized
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
+
+
+// Method to get display price
+productSchema.methods.getDisplayPrice = function() {
+  return this.pricing?.basePrice || 0;
+};
+
+// Method to get price with GST
+productSchema.methods.getPriceWithGST = function() {
+  const basePrice = this.pricing?.basePrice || 0;
+  if (this.pricing?.includesGST) {
+    return basePrice;
+  }
+  const gstRate = this.pricing?.gstRate || 18;
+  return basePrice * (1 + gstRate / 100);
+};
+
+// Virtual for frontend compatibility
+productSchema.virtual('price').get(function() {
+  return this.pricing?.basePrice || 0;
+});
+// Add static method around line 500 (before module.exports):
+
+// Static method to find products from enabled suppliers only
+productSchema.statics.findActiveWithEnabledSuppliers = function(query = {}) {
+  return this.aggregate([
+    {
+      $lookup: {
+        from: 'suppliers',
+        localField: 'supplier',
+        foreignField: '_id',
+        as: 'supplierInfo'
+      }
+    },
+    {
+      $match: {
+        ...query,
+        isActive: true,
+        isApproved: true,
+        'supplierInfo.profileEnabled': true,
+        'supplierInfo.isActive': true,
+        'supplierInfo.isApproved': true
+      }
+    },
+    {
+      $unwind: '$supplierInfo'
+    }
+  ]);
+};
+// Add these methods to your existing Product schema (after existing methods)
+
+// ...existing code...
+
+// ADD THESE METHODS:
+
+// Calculate delivery cost to specific location
+productSchema.methods.calculateDeliveryCost = async function(customerLocation, quantity = 1) {
+  const distanceCalculator = require('../utils/distanceCalculator');
+  
+  // Get supplier location (assuming supplier has coordinates)
+  await this.populate('supplier', 'coordinates businessAddress');
+  
+  if (!this.supplier.coordinates) {
+    throw new Error('Supplier location not available');
+  }
+
+  const distanceInfo = await distanceCalculator.calculateDistanceGoogle(
+    this.supplier.coordinates,
+    customerLocation
+  );
+
+  const itemWeight = (this.specifications?.weight || 1) * quantity;
+  const transportCost = distanceCalculator.calculateTransportCost(
+    distanceInfo.distance,
+    itemWeight
+  );
+
+  return {
+    distance: distanceInfo.distance,
+    duration: distanceInfo.duration,
+    transportCost,
+    totalWeight: itemWeight,
+    zone: distanceCalculator.getDistanceZone(distanceInfo.distance)
+  };
+};
+
+// Get delivery information for product
+productSchema.methods.getDeliveryInfo = async function(customerLocation) {
+  try {
+    const deliveryInfo = await this.calculateDeliveryCost(customerLocation, 1);
+    const distanceCalculator = require('../utils/distanceCalculator');
+    const deliveryEstimate = distanceCalculator.getDeliveryEstimate(deliveryInfo.distance);
+
+    return {
+      available: true,
+      distance: `${deliveryInfo.distance} km`,
+      zone: deliveryInfo.zone,
+      transportCost: deliveryInfo.transportCost,
+      estimatedDelivery: deliveryEstimate,
+      deliveryDate: {
+        earliest: new Date(Date.now() + deliveryEstimate.min * 60 * 60 * 1000),
+        latest: new Date(Date.now() + deliveryEstimate.max * 60 * 60 * 1000)
+      }
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message
+    };
+  }
+};
+
+// ...existing code...
+
+// Static method to check if product is visible (supplier profile enabled)
+productSchema.methods.isVisible = async function() {
+  if (this.isBaseProduct && this.createdByAdmin) {
+    return this.isActive && this.isApproved;
+  }
+  
+  const supplier = await mongoose.model('Supplier').findById(this.supplier);
+  return this.isActive && 
+         this.isApproved && 
+         supplier && 
+         supplier.isActive && 
+         supplier.isApproved && 
+         supplier.profileEnabled;
+};
 
 // Ensure virtual fields are serialized
 productSchema.set('toJSON', { virtuals: true });
