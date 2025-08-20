@@ -6,8 +6,23 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const { globalErrorHandler } = require('./utils/errorHandler');
 require('dotenv').config();
-
+const newsletterRoutes = require('./routes/newsletter');
+const translationRoutes = require('./routes/translations');
+const loyaltyRoutes = require('./routes/loyalty');
+const supplierLoyaltyRoutes = require('./routes/supplier-loyalty');
+const adminLoyaltyRoutes = require('./routes/admin-loyalty');
+const customerPromotionsRoutes = require('./routes/customer-promotions');
 const app = express();
+const knowMoreRoutes = require('./routes/know-more');
+// CRITICAL FIX: Trust proxy configuration for Render.com
+// Render.com uses proxy headers, so we need to trust the first proxy
+if (process.env.NODE_ENV === 'development') {
+  app.set('trust proxy', 1); // Trust first proxy (Render.com's load balancer)
+} else {
+  app.set('trust proxy', false); // Don't trust proxy in development
+}
+
+console.log(`🔧 Trust proxy configured for environment: ${process.env.NODE_ENV || 'development'}`);
 
 // Security middleware
 app.use(helmet({
@@ -70,21 +85,47 @@ app.use(cors(corsOptions));
 // Handle preflight requests explicitly for all routes
 app.options('*', cors(corsOptions));
 
-// Rate limiting - More lenient for production cold starts
+// FIXED: Rate limiting with proper trust proxy handling
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development' ? 200 : 1000, // More requests for production
+  max: process.env.NODE_ENV === 'development' ? 20000 : 1000, // More requests for production
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // CRITICAL: Use custom key generator that works with Render.com's proxy setup
+  keyGenerator: (req) => {
+    // In production (Render.com), get real IP from X-Forwarded-For header
+    if (process.env.NODE_ENV === 'production') {
+      const forwardedFor = req.headers['x-forwarded-for'];
+      if (forwardedFor) {
+        // Get the first IP in the chain (real client IP)
+        const clientIP = forwardedFor.split(',')[0].trim();
+        console.log(`🔍 Rate limit key - Forwarded IP: ${clientIP}`);
+        return clientIP;
+      }
+    }
+    // Fallback to req.ip
+    console.log(`🔍 Rate limit key - Direct IP: ${req.ip}`);
+    return req.ip;
+  },
   skip: (req) => {
     // Skip rate limiting for health checks
     return req.path === '/api/health' || req.path === '/health';
+  },
+  // Add handler for when limit is reached
+  handler: (req, res) => {
+    console.log(`🚫 Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({
+      success: false,
+      message: 'Too many requests from this IP, please try again later.',
+      retryAfter: Math.round(limiter.windowMs / 1000)
+    });
   }
 });
+
 app.use('/api/', limiter);
 
 // Body parsing middleware
@@ -119,7 +160,8 @@ app.get('/health', (req, res) => {
     status: 'OK',
     message: 'Aggrekart server is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    trustProxy: app.get('trust proxy')
   });
 });
 
@@ -131,7 +173,9 @@ app.get('/api/health', (req, res) => {
     message: 'Aggrekart API is running',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment:'development',
+    environment: process.env.NODE_ENV || 'development',
+    trustProxy: app.get('trust proxy'),
+    clientIP: req.ip,
     cors: {
       allowedOrigins: [
         'https://aggrekart-com.onrender.com',
@@ -159,10 +203,12 @@ app.get('/api/test-cors', (req, res) => {
     origin: req.headers.origin,
     userAgent: req.headers['user-agent'],
     timestamp: new Date().toISOString(),
+    clientIP: req.ip,
     requestHeaders: {
       origin: req.headers.origin,
       referer: req.headers.referer,
-      host: req.headers.host
+      host: req.headers.host,
+      'x-forwarded-for': req.headers['x-forwarded-for']
     }
   });
 });
@@ -175,18 +221,32 @@ app.use('/api/cart', require('./routes/cart'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/wishlist', require('./routes/wishlist'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/support', require('./routes/support')); // 🔥 NEW: Admin-managed support system
 app.use('/api/supplier/orders', require('./routes/supplier-orders'));
 app.use('/api/supplier/onboarding', require('./routes/supplier-onboarding'));
 app.use('/api/suppliers', require('./routes/suppliers'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/loyalty', require('./routes/loyalty'));
+// app.use('/api/loyalty', require('./routes/loyalty'));
 app.use('/api/pilot', require('./routes/pilot'));
 app.use('/api/reports', require('./routes/reports'));
-// Add this line after line 184:
+app.use('/api/supplier-orders', require('./routes/supplier-orders'));
+app.use('/api/translations', translationRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/supplier-loyalty', supplierLoyaltyRoutes);
+app.use('/api/admin-loyalty', adminLoyaltyRoutes);
+app.use('/api/customer-promotions', customerPromotionsRoutes);
+app.use('/api/know-more', knowMoreRoutes);
 
-// Add this line with your other route registrations:
 app.use('/api/gst', require('./routes/gst'));
 app.use('/api/gst', require('./routes/gst-fixed'));
+// FIXED: Remove duplicate GST route registration
+app.use('/api/gst', require('./routes/gst'));
+app.use('/api/newsletter', newsletterRoutes);
+// Add this line after your existing route declarations (around line 250)
+
+// ...existing routes...
+app.use('/api/distance-pricing', require('./routes/distance-pricing'));
+// ...existing routes...
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -195,7 +255,8 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     documentation: '/api/health',
     cors_test: '/api/test-cors',
-    environment: 'development',
+    environment: process.env.NODE_ENV || 'development',
+    trustProxy: app.get('trust proxy'),
     endpoints: {
       auth: '/api/auth',
       users: '/api/users',
@@ -203,6 +264,7 @@ app.get('/', (req, res) => {
       cart: '/api/cart',
       orders: '/api/orders',
       payments: '/api/payments',
+      support: '/api/support', // 🔥 NEW: Admin-managed support
       suppliers: '/api/suppliers',
       admin: '/api/admin',
       loyalty: '/api/loyalty',
@@ -213,7 +275,7 @@ app.get('/', (req, res) => {
 });
 
 // Serve static files in production (if you have a build folder)
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === 'production') {
   const path = require('path');
   
   // Check if build directory exists
@@ -270,6 +332,7 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Aggrekart server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 Trust proxy: ${app.get('trust proxy')}`);
   console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
   console.log(`🧪 CORS Test: http://localhost:${PORT}/api/test-cors`);
   console.log(`📋 Available endpoints:`);

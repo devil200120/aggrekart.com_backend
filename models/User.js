@@ -80,8 +80,29 @@ const userSchema = new mongoose.Schema({
       }
     },
     coordinates: {
-      latitude: Number,
-      longitude: Number
+      latitude: {
+        type: Number,
+        min: -90,
+        max: 90
+      },
+      longitude: {
+        type: Number,
+        min: -180,
+        max: 180
+      }
+    },
+    geocodingInfo: {
+      source: {
+        type: String,
+        enum: ['google', 'nominatim', 'manual', 'fallback', 'default']
+      },
+      method: {
+        type: String,
+        enum: ['geocoded', 'user_provided', 'manual_refresh']
+      },
+      formattedAddress: String,
+      geocodedAt: Date,
+      updatedAt: Date
     },
     isDefault: {
       type: Boolean,
@@ -163,6 +184,24 @@ const userSchema = new mongoose.Schema({
       enum: ['english', 'hindi', 'telugu'],
       default: 'english'
     },
+    // Add these lines right after line 177 (after the existing language field):
+
+preferredLanguage: {
+  type: String,
+  default: 'en',
+  maxlength: 10
+},
+languageSettings: {
+  autoDetect: {
+    type: Boolean,
+    default: true
+  },
+  fallbackLanguage: {
+    type: String,
+    default: 'en',
+    maxlength: 10
+  }
+},
     notifications: {
       email: {
         type: Boolean,
@@ -380,7 +419,22 @@ userSchema.virtual('membershipBenefits').get(function() {
   
   return benefits[this.membershipTier] || benefits.silver;
 });
-
+// Add this method to your userSchema (around line 400+ after other methods)
+userSchema.methods.getLanguagePreference = function() {
+  // Prioritize new preferredLanguage field
+  if (this.preferredLanguage) {
+    return this.preferredLanguage;
+  }
+  
+  // Fallback to old language field and map it
+  const languageMap = {
+    'english': 'en',
+    'hindi': 'hi',
+    'telugu': 'te'
+  };
+  
+  return languageMap[this.preferences?.language] || 'en';
+};
 // Ensure only one default address
 userSchema.pre('save', function(next) {
   if (this.addresses && this.addresses.length > 0) {
@@ -421,6 +475,18 @@ userSchema.methods.toJSON = function() {
 userSchema.statics.findByPhone = function(phoneNumber) {
   return this.findOne({ phoneNumber }).select('+password');
 };
+
+// Static method to support phone + password login
+userSchema.statics.findByPhoneAndValidatePassword = async function(phoneNumber, password) {
+  const user = await this.findByPhone(phoneNumber);
+  if (!user) return null;
+  
+  const isPasswordValid = await user.comparePassword(password);
+  if (!isPasswordValid) return null;
+  
+  return user;
+};
+
 
 // Static method to support phone + password login
 userSchema.statics.findByPhoneAndValidatePassword = async function(phoneNumber, password) {

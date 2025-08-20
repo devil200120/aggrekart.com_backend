@@ -20,11 +20,60 @@ const productSchema = new mongoose.Schema({
     enum: ['aggregate', 'sand', 'tmt_steel', 'bricks_blocks', 'cement']
   },
     subcategory: {
-    type: String,
-    required: function() {
-      return !(this.isBaseProduct && this.createdByAdmin);
-    }
+  type: String,
+  required: function() {
+    return !(this.isBaseProduct && this.createdByAdmin);
   },
+  validate: {
+    validator: function(value) {
+      if (this.isBaseProduct && this.createdByAdmin) return true;
+      if (!value) return false;
+      
+      // More flexible validation - accept both keys and display names
+      const validSubcategories = {
+  'aggregate': [
+    'stone_aggregate', 'Stone Aggregate', // Accept both key and display name
+    'dust', 'Dust',
+    '10_mm_metal', '10 MM Metal',
+    '20_mm_metal', '20 MM Metal', 
+    '40_mm_metal', '40 MM Metal',
+    'gsb', 'GSB',
+    'wmm', 'WMM',
+    'm_sand', 'M.sand', 'M Sand'
+  ],
+  'sand': [
+    'river_sand_plastering', 'River sand (Plastering)', 'River Sand (Plastering)',
+    'river_sand', 'River sand', 'River Sand'
+  ],
+  'tmt_steel': [
+    'fe_415', 'FE-415', 'fe-415',
+    'fe_500', 'FE-500', 'fe-500',
+    'fe_550', 'FE-550', 'fe-550', 
+    'fe_600', 'FE-600', 'fe-600'
+  ],
+  'bricks_blocks': [
+    'solid_blocks', 'Solid Blocks',
+    'hollow_blocks', 'Hollow Blocks',
+    'aac_blocks', 'AAC Blocks',
+    'fly_ash_bricks', 'Fly Ash Bricks',
+    'clay_bricks', 'Clay Bricks'
+  ],
+  'cement': [
+    'opc_53', 'OPC 53 Grade',
+    'opc_43', 'OPC 43 Grade', 
+    'ppc', 'PPC',
+    'white_cement', 'White Cement'
+  ]
+};
+      
+      const categorySubcategories = validSubcategories[this.category];
+      return categorySubcategories && categorySubcategories.includes(value);
+    },
+    message: function(props) {
+      return `Invalid subcategory "${props.value}" for category "${this.category}"`;
+    }
+  }
+},
     brand: {
     type: String,
     required: function() {
@@ -44,7 +93,8 @@ specifications: {
   },
   diameter: {
     type: String,
-    enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm'],
+        enum: ['6mm', '8mm', '10mm', '12mm', '16mm', '20mm', '25mm', '32mm', '6', '8', '10', '12', '16', '20', '25', '32'],
+
     required: function() { 
       return this.category === 'tmt_steel' && !(this.isBaseProduct && this.createdByAdmin); 
     }
@@ -166,9 +216,7 @@ specifications: {
   }],
    hsnCode: {
     type: String,
-    required: function() {
-      return !(this.isBaseProduct && this.createdByAdmin);
-    }
+    required: false
   },
     // Admin control fields
   isBaseProduct: {
@@ -430,6 +478,9 @@ productSchema.statics.getByCategory = function(category, options = {}) {
 };
 
 // Static method to search products
+// Find the searchProducts method around line 433 and replace it with:
+
+// Static method to search products
 productSchema.statics.searchProducts = function(query, options = {}) {
   const {
     limit = 20,
@@ -444,7 +495,9 @@ productSchema.statics.searchProducts = function(query, options = {}) {
   const searchFilter = {
     $text: { $search: query },
     isActive: true,
-    isApproved: true
+    isApproved: true,
+    // 🚫 ONLY SHOW PRODUCTS WITH AVAILABLE STOCK
+    
   };
   
   if (category) searchFilter.category = category;
@@ -482,6 +535,138 @@ productSchema.methods.getPriceWithGST = function() {
 productSchema.virtual('price').get(function() {
   return this.pricing?.basePrice || 0;
 });
+
+// Ensure virtual fields are serialized
+productSchema.set('toJSON', { virtuals: true });
+productSchema.set('toObject', { virtuals: true });
+
+
+// Method to get display price
+productSchema.methods.getDisplayPrice = function() {
+  return this.pricing?.basePrice || 0;
+};
+
+// Method to get price with GST
+productSchema.methods.getPriceWithGST = function() {
+  const basePrice = this.pricing?.basePrice || 0;
+  if (this.pricing?.includesGST) {
+    return basePrice;
+  }
+  const gstRate = this.pricing?.gstRate || 18;
+  return basePrice * (1 + gstRate / 100);
+};
+
+// Virtual for frontend compatibility
+productSchema.virtual('price').get(function() {
+  return this.pricing?.basePrice || 0;
+});
+// Add static method around line 500 (before module.exports):
+
+// Static method to find products from enabled suppliers only
+productSchema.statics.findActiveWithEnabledSuppliers = function(query = {}) {
+  return this.aggregate([
+    {
+      $lookup: {
+        from: 'suppliers',
+        localField: 'supplier',
+        foreignField: '_id',
+        as: 'supplierInfo'
+      }
+    },
+    {
+      $match: {
+        ...query,
+        isActive: true,
+        isApproved: true,
+        'supplierInfo.profileEnabled': true,
+        'supplierInfo.isActive': true,
+        'supplierInfo.isApproved': true
+      }
+    },
+    {
+      $unwind: '$supplierInfo'
+    }
+  ]);
+};
+// Add these methods to your existing Product schema (after existing methods)
+
+// ...existing code...
+
+// ADD THESE METHODS:
+
+// Calculate delivery cost to specific location
+productSchema.methods.calculateDeliveryCost = async function(customerLocation, quantity = 1) {
+  const distanceCalculator = require('../utils/distanceCalculator');
+  
+  // Get supplier location (assuming supplier has coordinates)
+  await this.populate('supplier', 'coordinates businessAddress');
+  
+  if (!this.supplier.coordinates) {
+    throw new Error('Supplier location not available');
+  }
+
+  const distanceInfo = await distanceCalculator.calculateDistanceGoogle(
+    this.supplier.coordinates,
+    customerLocation
+  );
+
+  const itemWeight = (this.specifications?.weight || 1) * quantity;
+  const transportCost = distanceCalculator.calculateTransportCost(
+    distanceInfo.distance,
+    itemWeight
+  );
+
+  return {
+    distance: distanceInfo.distance,
+    duration: distanceInfo.duration,
+    transportCost,
+    totalWeight: itemWeight,
+    zone: distanceCalculator.getDistanceZone(distanceInfo.distance)
+  };
+};
+
+// Get delivery information for product
+productSchema.methods.getDeliveryInfo = async function(customerLocation) {
+  try {
+    const deliveryInfo = await this.calculateDeliveryCost(customerLocation, 1);
+    const distanceCalculator = require('../utils/distanceCalculator');
+    const deliveryEstimate = distanceCalculator.getDeliveryEstimate(deliveryInfo.distance);
+
+    return {
+      available: true,
+      distance: `${deliveryInfo.distance} km`,
+      zone: deliveryInfo.zone,
+      transportCost: deliveryInfo.transportCost,
+      estimatedDelivery: deliveryEstimate,
+      deliveryDate: {
+        earliest: new Date(Date.now() + deliveryEstimate.min * 60 * 60 * 1000),
+        latest: new Date(Date.now() + deliveryEstimate.max * 60 * 60 * 1000)
+      }
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message
+    };
+  }
+};
+
+// ...existing code...
+
+// Static method to check if product is visible (supplier profile enabled)
+productSchema.methods.isVisible = async function() {
+  if (this.isBaseProduct && this.createdByAdmin) {
+    return this.isActive && this.isApproved;
+  }
+  
+  const supplier = await mongoose.model('Supplier').findById(this.supplier);
+  return this.isActive && 
+         this.isApproved && 
+         supplier && 
+         supplier.isActive && 
+         supplier.isApproved && 
+         supplier.profileEnabled;
+};
 
 // Ensure virtual fields are serialized
 productSchema.set('toJSON', { virtuals: true });

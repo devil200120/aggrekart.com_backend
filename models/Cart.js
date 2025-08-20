@@ -43,6 +43,71 @@ const cartSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // ADD THESE FIELDS AFTER LINE 45 (after totalItems field)
+
+  appliedCoupon: {
+    code: String,
+    programId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'LoyaltyProgram'
+    },
+    discountAmount: {
+      type: Number,
+      default: 0
+    },
+    discountType: {
+      type: String,
+      enum: ['percentage', 'fixed']
+    },
+    discountValue: Number
+  },
+  
+  appliedCoins: {
+    amount: {
+      type: Number,
+      default: 0
+    },
+    discount: {
+      type: Number,
+      default: 0
+    }
+  },
+  // Add this field after the appliedCoins field (around line 70):
+
+  appliedSupplierPromotion: {
+    promotionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'SupplierPromotion'
+    },
+    title: String,
+    discountAmount: {
+      type: Number,
+      default: 0
+    },
+    supplier: String,
+    couponCode: String,
+    appliedAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  
+  finalAmount: {
+    type: Number,
+    default: 0
+  },
+  // ADD THESE LINES AFTER LINE 87 (after finalAmount field):
+
+commission: {
+  type: Number,
+  default: 0,
+  min: 0
+},
+commissionRate: {
+  type: Number,
+  default: 5,
+  min: 0
+},
   deliveryAddress: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User.addresses'
@@ -98,7 +163,7 @@ cartSchema.methods.validateStock = async function() {
         });
       }
       
-      if (item.quantity < product.pricing.minimumQuantity) {
+      if (product.pricing && item.quantity < (product.pricing.minimumQuantity || 0)) { 
         stockIssues.push({
           productId: item.product,
           productName: product.name,
@@ -112,5 +177,57 @@ cartSchema.methods.validateStock = async function() {
   
   return stockIssues;
 };
+// Add this method before the module.exports line:
 
+// Method to calculate cart totals
+// REPLACE LINES 118-133 WITH THIS UPDATED METHOD:
+
+// Replace the calculateTotals method (around lines 173-197)
+
+// REPLACE LINES 173-204 WITH:
+
+cartSchema.methods.calculateTotals = async function() {
+  let totalAmount = 0;
+  let totalItems = 0;
+  
+  for (let item of this.items) {
+    if (item.quantity && item.priceAtTime && !isNaN(item.quantity) && !isNaN(item.priceAtTime)) {
+      totalAmount += item.quantity * item.priceAtTime;
+      totalItems += item.quantity;
+    }
+  }
+  
+  this.totalAmount = Math.round(totalAmount * 100) / 100;
+  this.totalItems = totalItems;
+  
+  // ✅ CALCULATE 5% COMMISSION
+  this.commission = Math.round((this.totalAmount * (this.commissionRate || 5)) / 100);
+  
+  // Calculate final amount with ALL charges and discounts
+  let finalAmount = this.totalAmount + this.commission;
+  
+  // Apply coupon discount
+  if (this.appliedCoupon && this.appliedCoupon.discountAmount) {
+    finalAmount -= this.appliedCoupon.discountAmount;
+  }
+  
+  // Apply coin discount
+  if (this.appliedCoins && this.appliedCoins.discount) {
+    finalAmount -= this.appliedCoins.discount;
+  }
+  
+  // Apply supplier promotion discount
+  if (this.appliedSupplierPromotion && this.appliedSupplierPromotion.discountAmount) {
+    finalAmount -= this.appliedSupplierPromotion.discountAmount;
+  }
+  
+  this.finalAmount = Math.max(0, Math.round(finalAmount * 100) / 100);
+  
+  return { 
+    totalAmount: this.totalAmount, 
+    totalItems: this.totalItems,
+    commission: this.commission,
+    finalAmount: this.finalAmount 
+  };
+};
 module.exports = mongoose.model('Cart', cartSchema);

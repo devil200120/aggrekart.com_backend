@@ -98,11 +98,54 @@ const sensitiveOperation = (req, res, next) => {
   // This is a placeholder - implement Redis-based rate limiting for production
   next();
 };
+// Add this new middleware function after the existing authorize function:
+
+// Check if supplier is suspended
+const checkSupplierSuspension = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return next(new ErrorHandler('User not authenticated', 401));
+    }
+
+    // Only check for suppliers
+    if (req.user.role === 'supplier') {
+      const Supplier = require('../models/Supplier');
+      
+      const supplier = await Supplier.findOne({ user: req.user._id });
+      
+      if (!supplier) {
+        return next(new ErrorHandler('Supplier profile not found', 404));
+      }
+
+      // Check if supplier is suspended (isActive: false means suspended)
+      if (!supplier.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your supplier account has been suspended',
+          error: 'SUPPLIER_SUSPENDED',
+          data: {
+            suspendedAt: supplier.suspendedAt,
+            suspensionReason: supplier.suspensionReason,
+            contactSupport: 'Please contact support@aggrekart.com for assistance'
+          }
+        });
+      }
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Export the new middleware
+
 
 module.exports = { 
   auth, 
   authorize, 
   canPlaceOrders, 
   optionalAuth, 
-  sensitiveOperation 
+  sensitiveOperation ,
+  checkSupplierSuspension  // Add this export
 };
