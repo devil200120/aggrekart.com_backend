@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const loyaltyService = require('../utils/loyaltyService');
 
 const orderItemSchema = new mongoose.Schema({
   product: {
@@ -6,15 +7,48 @@ const orderItemSchema = new mongoose.Schema({
     ref: 'Product',
     required: true
   },
-  productSnapshot: {
+    productSnapshot: {
     name: String,
     description: String,
     category: String,
     subcategory: String,
     brand: String,
     hsnCode: String,
-    imageUrl: String
+    imageUrl: String,
+    images: [{
+      url: String,
+      alt: String,
+      isPrimary: {
+        type: Boolean,
+        default: false
+      },
+      cloudinaryId: String
+    }]
   },
+  distancePricing: {
+  supplierLocation: {
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
+    address: String
+  },
+  customerLocation: {
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
+    address: String
+  },
+  distance: {
+    value: { type: Number, required: true }, // in km
+    source: { type: String, enum: ['google', 'haversine'], required: true }
+  },
+  transportCost: { type: Number, required: true },
+  deliveryZone: { type: String, enum: ['0-5km', '5-10km', '10-20km', '20km+'], required: true },
+  deliveryEstimate: {
+    min: Number, // minimum hours
+    max: Number, // maximum hours
+    estimatedDate: Date
+  }
+},
+
   quantity: {
     type: Number,
     required: true,
@@ -105,55 +139,85 @@ const orderSchema = new mongoose.Schema({
     }
   },
   
-  // Payment details - FIXED: Added 'cod' to enum
-  payment: {
-    method: {
-      type: String,
-      enum: ['cod', 'card', 'upi', 'netbanking', 'wallet'], // FIXED: Added 'cod'
-      required: true
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'paid', 'failed', 'refunded', 'partial_refund'],
-      default: 'pending'
-    },
-    transactionId: String, // Razorpay payment ID
-    razorpayOrderId: String, // Razorpay order ID
-    paymentGatewayResponse: mongoose.Schema.Types.Mixed,
-    advancePercentage: {
-      type: Number,
-      min: 25,
-      max: 100,
-      default: 25
-    },
-    advanceAmount: {
-      type: Number,
-      min: 0
-    },
-    remainingAmount: {
-      type: Number,
-      min: 0
-    },
-    paidAt: Date,
-    refundDetails: {
-      amount: Number,
-      reason: String,
-      processedAt: Date,
-      refundId: String
+
+// Payment details - Updated for Production
+payment: {
+  method: {
+    type: String,
+    enum: ['cod', 'card', 'upi', 'netbanking', 'wallet', 'razorpay', 'cashfree', 'paytm'],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded', 'partial_refund'],
+    default: 'pending'
+  },
+  gateway: {
+    type: String,
+    enum: ['razorpay', 'cashfree', 'paytm', 'cod'],
+    default: 'cod'
+  },
+  transactionId: {
+    type: String,
+    index: true // Add index for faster queries
+  },
+  razorpayOrderId: String,
+  cashfreeOrderId: {
+    type: String,
+    index: true // Add index for webhook lookups
+  },
+  sessionId: String, // Cashfree payment session ID
+  paytmTxnId: String,
+  paymentGatewayResponse: mongoose.Schema.Types.Mixed,
+  advancePercentage: {
+    type: Number,
+    min: 25,
+    max: 100,
+    default: 25
+  },
+  advanceAmount: {
+    type: Number,
+    min: 0,
+    required: function() {
+      return this.method !== 'cod';
     }
   },
-  
-  // Order status and timeline - FIXED: Added 'confirmed' status
-  status: {
-  type: String,
-  enum: ['pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled'],
-  default: 'pending'
+  remainingAmount: {
+    type: Number,
+    default: function() {
+      if (this.method === 'cod') return 0;
+      return this.parent().pricing.totalAmount - (this.advanceAmount || 0);
+    }
+  },
+  paidAt: Date,
+  failureReason: String, // Store payment failure reasons
+  refundDetails: [{
+    refundId: String,
+    amount: Number,
+    reason: String,
+    status: String,
+    processedAt: Date,
+    processedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }]
 },
+
+// ...rest of existing schema...
+  // Order status and timeline - FIXED: Added 'confirmed' status
+ // Update the status enum (around lines 180-185):
+
+  status: {
+    type: String,
+    enum: ['pending_payment', 'pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled'],
+    default: 'pending'
+  },
   
   timeline: [{
    status: {
   type: String,
-  enum: ['pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled']
+  enum: ['pending_payment', 'pending', 'confirmed', 'preparing', 'material_loading', 'processing', 'dispatched', 'delivered', 'cancelled']
 },
     timestamp: {
       type: Date,
@@ -193,6 +257,11 @@ const orderSchema = new mongoose.Schema({
   
   // Delivery details
   delivery: {
+    pilotAssigned: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Pilot',
+      default: null
+    },
     estimatedTime: String,
     actualDeliveryTime: Date,
     driverDetails: {
@@ -274,11 +343,22 @@ orderSchema.pre('save', async function(next) {
     this.payment.advanceAmount = Math.round(
       (this.pricing.totalAmount * this.payment.advancePercentage) / 100
     );
-    this.payment.remainingAmount = this.pricing.totalAmount - this.payment.advanceAmount;
+   this.payment.remainingAmount = Math.max(0, Math.round((this.pricing.totalAmount - this.payment.advanceAmount) * 100) / 100);
   }
   
   next();
 });
+orderSchema.methods.getDeliveryInfo = function() {
+  if (!this.distancePricing) return null;
+
+  return {
+    distance: `${this.distancePricing.distance.value} km`,
+    zone: this.distancePricing.deliveryZone,
+    transportCost: this.distancePricing.transportCost,
+    estimatedDelivery: this.distancePricing.deliveryEstimate.estimatedDate,
+    deliveryRange: `${this.distancePricing.deliveryEstimate.min}-${this.distancePricing.deliveryEstimate.max} hours`
+  };
+};
 
 // Method to check if cooling period is active
 orderSchema.methods.isCoolingPeriodActive = function() {
@@ -289,6 +369,7 @@ orderSchema.methods.isCoolingPeriodActive = function() {
 
 // Method to update order status
 orderSchema.methods.updateStatus = function(newStatus, note, updatedBy) {
+  const previousStatus = this.status;
   this.status = newStatus;
   this.timeline.push({
     status: newStatus,
@@ -302,7 +383,43 @@ orderSchema.methods.updateStatus = function(newStatus, note, updatedBy) {
     this.coolingPeriod.isActive = false;
     this.coolingPeriod.canModify = false;
   }
+
+  // NEW: Award AggreCoins when order is delivered
+  if (newStatus === 'delivered' && previousStatus !== 'delivered') {
+    // Use setTimeout to avoid blocking the main operation
+    setTimeout(async () => {
+      try {
+        const result = await loyaltyService.awardOrderCompletionCoins(
+          this._id,
+          this.customer,
+          this.totalAmount
+        );
+        
+        console.log(`🎉 AggreCoin Award Result for Order ${this._id}:`, result);
+        
+        // Send notification to customer about coins earned
+        if (result.success && result.coinsAwarded > 0) {
+          // Import notification service
+          const { sendSMS } = require('../utils/notifications');
+          
+          // Get customer details
+          const User = require('./User');
+          const customer = await User.findById(this.customer);
+          
+          if (customer && customer.phoneNumber) {
+            const message = `🎉 Congratulations! You've earned ${result.coinsAwarded} AggreCoins for your order! ${result.tierUpgrade?.upgraded ? `\n🌟 You've been upgraded to ${result.tierUpgrade.newTier.toUpperCase()} membership!` : ''}`;
+            
+            await sendSMS(customer.phoneNumber, message);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error awarding completion coins:', error);
+      }
+    }, 2000); // Delay by 2 seconds to ensure order is saved
+  }
 };
+
+// ...existing code...
 
 // Method to calculate refund amount during cooling period
 orderSchema.methods.calculateCoolingPeriodRefund = function() {
@@ -369,5 +486,25 @@ orderSchema.statics.getOrdersWithFilters = function(filters = {}, options = {}) 
     .skip(skip)
     .limit(limit);
 };
+orderSchema.methods.calculateTotalWithDistance = function() {
+  const itemsTotal = this.items.reduce((sum, item) => {
+    return sum + (item.quantity * item.priceAtTime);
+  }, 0);
+
+  const gstAmount = itemsTotal * (this.gstRate / 100);
+  const transportCost = this.distancePricing?.transportCost || 0;
+  
+  return {
+    itemsTotal,
+    gstAmount,
+    transportCost,
+    totalAmount: itemsTotal + gstAmount + transportCost
+  };
+};
+
+// Add this BEFORE the module.exports line (replace line 383)
+
+// Pre-save middleware to handle floating point precision issues
+
 
 module.exports = mongoose.model('Order', orderSchema);

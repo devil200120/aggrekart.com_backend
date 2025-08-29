@@ -151,7 +151,10 @@ const pilotSchema = new mongoose.Schema({
     name: String,
     phoneNumber: String,
     relation: String
-  }
+  },
+  // OTP fields for authentication
+  tempOTP: String,
+  otpExpiry: Date
 }, {
   timestamps: true
 });

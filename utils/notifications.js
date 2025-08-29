@@ -787,6 +787,75 @@ Aggrekart Supplier Panel`;
   }
 };
 
+// Pilot notification functions
+const sendPilotOrderAssignmentNotification = async (pilot, order) => {
+  try {
+    console.log(`📬 Sending pilot order assignment notification for Order ID: ${order.orderId}`);
+    
+    if (pilot.phoneNumber) {
+      const smsMessage = `🚚 New Delivery Assignment!
+
+Order ID: ${order.orderId}
+Customer: ${order.customer.name}
+Delivery Address: ${order.deliveryAddress?.city || 'N/A'}
+Amount: ₹${order.pricing.totalAmount.toLocaleString('en-IN')}
+
+Your delivery OTP: ${order.delivery.deliveryOTP}
+
+Please contact customer at +91${order.customer.phoneNumber} to coordinate delivery.
+
+Aggrekart Pilot`;
+
+      await sendSMS(pilot.phoneNumber, smsMessage);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Failed to send pilot assignment notification:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+const sendPilotLoginOTP = async (phoneNumber, otp) => {
+  try {
+    const message = `Your Aggrekart pilot login OTP: ${otp}. Valid for 10 minutes. Do not share this OTP with anyone.`;
+    return await sendSMS(phoneNumber, message);
+  } catch (error) {
+    console.error('❌ Failed to send pilot OTP:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+const sendPilotRegistrationConfirmation = async (pilot) => {
+  try {
+    const message = `Welcome to Aggrekart! Your pilot registration (${pilot.pilotId}) is submitted. You'll be notified once approved by our team.`;
+    return await sendSMS(pilot.phoneNumber, message);
+  } catch (error) {
+    console.error('❌ Failed to send pilot registration confirmation:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+const sendPilotApprovalNotification = async (pilot) => {
+  try {
+    const message = `🎉 Congratulations! Your Aggrekart pilot account (${pilot.pilotId}) has been approved. You can now start accepting delivery orders. Download the pilot app and login to get started.`;
+    return await sendSMS(pilot.phoneNumber, message);
+  } catch (error) {
+    console.error('❌ Failed to send pilot approval notification:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+const sendCustomerDeliveryOTP = async (customer, order, otp) => {
+  try {
+    const message = `Your delivery OTP for order ${order.orderId}: ${otp}. Share this OTP with the delivery person to confirm receipt of your order. Aggrekart`;
+    return await sendSMS(customer.phoneNumber, message);
+  } catch (error) {
+    console.error('❌ Failed to send delivery OTP:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendSMS,
   sendEmail,
@@ -794,5 +863,10 @@ module.exports = {
   sendOrderNotification,
   sendOrderPlacementNotification,    // 🔥 NEW: Enhanced customer notifications
   sendSupplierOrderNotification,     // 🔥 NEW: Enhanced supplier notifications
+  sendPilotOrderAssignmentNotification,
+  sendPilotLoginOTP,
+  sendPilotRegistrationConfirmation,
+  sendPilotApprovalNotification,
+  sendCustomerDeliveryOTP,
   NotificationService
 };
