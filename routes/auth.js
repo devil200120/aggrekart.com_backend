@@ -566,7 +566,7 @@ router.post('/verify-phone', [
 // @desc    Verify email with OTP
 // @access  Public (changed from Private)
 router.post('/verify-email', [
-  body('email').isEmail().withMessage('Please provide a valid email'),
+  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('otp').isLength({ min: 6, max: 6 }).withMessage('Please provide a valid 6-digit OTP')
 ], async (req, res, next) => {
   try {
@@ -582,7 +582,7 @@ router.post('/verify-email', [
     const { email, otp } = req.body;
 
     const user = await User.findOne({
-      email: email.toLowerCase().trim(),
+      email: email,
       emailVerificationOTP: otp,
       emailOTPExpire: { $gt: Date.now() }
     });
@@ -695,28 +695,46 @@ router.post('/resend-otp', [
     // Generate new OTP
     const newOTP = generateOTP();
 
-    if (type === 'phone') {
-      user.phoneVerificationOTP = newOTP;
-      user.phoneOTPExpire = Date.now() + 10 * 60 * 1000;
-      await sendSMS(identifier, `Your Aggrekart verification code is: ${newOTP}. Valid for 10 minutes.`);
-    } else {
-      user.emailVerificationOTP = newOTP;
-      user.emailOTPExpire = Date.now() + 10 * 60 * 1000;
-      await sendEmail(identifier, 'Verify Your Email - Aggrekart', `Your email verification code is: ${newOTP}`);
-    }
+    // Update the resend-otp route around line 695
+if (type === 'phone') {
+  user.phoneVerificationOTP = newOTP;
+  user.phoneOTPExpire = Date.now() + 10 * 60 * 1000;
+  
+  try {
+    await sendSMS(identifier, `Your Aggrekart verification code is: ${newOTP}. Valid for 10 minutes.`);
+  } catch (smsError) {
+    console.error('SMS sending failed:', smsError);
+  }
+} else {
+  user.emailVerificationOTP = newOTP;
+  user.emailOTPExpire = Date.now() + 10 * 60 * 1000;
+  
+  try {
+    await sendEmail(identifier, 'Verify Your Email - Aggrekart', `Your email verification code is: ${newOTP}`);
+  } catch (emailError) {
+    console.error('Email sending failed:', emailError);
+  }
+}
 
-    await user.save();
+await user.save();
 
-    res.json({
-      success: true,
-      message: `New OTP sent to your ${type}`,
-      data: {
-        type,
-        identifier: type === 'phone' 
-          ? identifier.replace(/(\d{6})(\d{4})/, 'XXXXXX$2')
-          : identifier.replace(/(.{2})(.*)(@.*)/, '$1***$3')
-      }
-    });
+const responseData = {
+  success: true,
+  message: `New OTP sent to your ${type}`,
+  data: {
+    type,
+    identifier: type === 'phone' 
+      ? identifier.replace(/(\d{6})(\d{4})/, 'XXXXXX$2')
+      : identifier.replace(/(.{2})(.*)(@.*)/, '$1***$3')
+  }
+};
+
+// Add dev OTP in development mode
+if (process.env.NODE_ENV === 'development') {
+  responseData.devOtp = newOTP;
+}
+
+res.json(responseData);
 
   } catch (error) {
     next(error);
@@ -762,21 +780,28 @@ router.post('/login', [
 
     const { identifier, password, loginType } = req.body;
     
-    // Normalize identifier for consistent searching
-    const normalizedIdentifier = identifier.toLowerCase().trim();
+    // FIXED: Proper email normalization for login
+    const validator = require('validator');
+    let searchEmail = identifier.toLowerCase().trim();
+    let searchPhone = identifier.trim();
     
-    console.log('🔍 Looking for user with identifier:', normalizedIdentifier);
+    // If identifier looks like an email, normalize it
+    if (validator.isEmail(identifier)) {
+      searchEmail = validator.normalizeEmail(identifier);
+      console.log('🔍 Email normalized:', identifier, '→', searchEmail);
+    }
+    
+    console.log('🔍 Looking for user with normalized identifier:', searchEmail);
 
-    // Find user by email or phone number
+    // Find user by normalized email or phone number
     const user = await User.findOne({
       $or: [
-        { email: normalizedIdentifier },
-        { phoneNumber: identifier.trim() }
+        { email: searchEmail },
+        { phoneNumber: searchPhone }
       ]
     }).select('+password');
-
     if (!user) {
-      console.log('❌ User not found for identifier:', normalizedIdentifier);
+      console.log('❌ User not found for identifier:', identifier);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'

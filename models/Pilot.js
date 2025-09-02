@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const pilotSchema = new mongoose.Schema({
   pilotId: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   },
   name: {
     type: String,
@@ -151,7 +150,10 @@ const pilotSchema = new mongoose.Schema({
     name: String,
     phoneNumber: String,
     relation: String
-  }
+  },
+  // OTP fields for authentication
+  tempOTP: String,
+  otpExpiry: Date
 }, {
   timestamps: true
 });

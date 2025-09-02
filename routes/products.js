@@ -10,18 +10,18 @@ const router = express.Router();
 
 const Order = require('../models/Order');
 
-// Product categories and subcategories
+// Product categories and subcategories - FIXED to match actual database values
 const productCategories = {
   aggregate: {
     name: 'Aggregate',
     subcategories: {
-      dust: 'Dust',
-      '10mm_metal': '10 MM Metal',
-      '20mm_metal': '20 MM Metal',
-      '40mm_metal': '40 MM Metal',
-      gsb: 'GSB',
-      wmm: 'WMM',
-      m_sand: 'M.sand'
+      'dust': 'Dust',
+      '10_mm_metal': '10 MM Metal',
+      '20_mm_metal': '20 MM Metal', 
+      '40_mm_metal': '40 MM Metal',
+      'gsb': 'GSB',
+      'wmm': 'WMM',
+      'm_sand': 'M.sand'
     },
     unit: 'MT',
     hsnCode: '2517'
@@ -29,8 +29,8 @@ const productCategories = {
   sand: {
     name: 'Sand',
     subcategories: {
-      river_sand_plastering: 'River sand (Plastering)',
-      river_sand: 'River sand'
+      'river_sand_plastering': 'River sand (Plastering)',
+      'river_sand': 'River sand'
     },
     unit: 'MT',
     hsnCode: '2505'
@@ -38,10 +38,10 @@ const productCategories = {
   tmt_steel: {
     name: 'TMT Steel',
     subcategories: {
-      fe_415: 'FE-415',
-      fe_500: 'FE-500',
-      fe_550: 'FE-550',
-      fe_600: 'FE-600'
+      'fe_415': 'FE-415',
+      'fe_500': 'FE-500',
+      'fe_550': 'FE-550',
+      'fe_600': 'FE-600'
     },
     unit: 'MT',
     hsnCode: '7213'
@@ -49,10 +49,10 @@ const productCategories = {
   bricks_blocks: {
     name: 'Bricks & Blocks',
     subcategories: {
-      red_bricks: 'Red Bricks',
-      fly_ash_bricks: 'Fly Ash Bricks',
-      concrete_blocks: 'Concrete Blocks',
-      aac_blocks: 'AAC Blocks'
+      'red_bricks': 'Red Bricks',
+      'fly_ash_bricks': 'Fly Ash Bricks',
+      'concrete_blocks': 'Concrete Blocks',
+      'aac_blocks': 'AAC Blocks'
     },
     unit: 'numbers',
     hsnCode: '6901'
@@ -60,14 +60,13 @@ const productCategories = {
   cement: {
     name: 'Cement',
     subcategories: {
-      opc: 'OPC',
-      ppc: 'PPC'
+      'opc': 'OPC',
+      'ppc': 'PPC'
     },
     unit: 'bags',
     hsnCode: '2523'
   }
 };
-
 // @route   GET /api/products/categories
 // @desc    Get product categories and subcategories
 // @access  Public
@@ -83,63 +82,232 @@ router.get('/categories', async (req, res, next) => {
 });
 
 // @route   GET /api/products
-// @desc    Get products with filtering, sorting, and pagination
+// @desc    Get products with filters (SHOWS ALL APPROVED PRODUCTS INCLUDING OUT OF STOCK)
 // @access  Public
-router.get('/', optionalAuth, [
-  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50'),
-  query('category').optional().isIn(Object.keys(productCategories)).withMessage('Invalid category'),
-  query('subcategory').optional().isString(),
-  query('minPrice').optional().isFloat({ min: 0 }).withMessage('Minimum price must be positive'),
-  query('maxPrice').optional().isFloat({ min: 0 }).withMessage('Maximum price must be positive'),
-  query('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
-  query('sort').optional().isIn(['price_low', 'price_high', 'rating', 'newest', 'popular']).withMessage('Invalid sort option'),
-  query('search').optional().trim().isLength({ min: 2 }).withMessage('Search query must be at least 2 characters'),
-  // Add these validations after line 93:
-
-query('materialGrade').optional().isString().withMessage('Invalid material grade'),
-query('strength').optional().isString().withMessage('Invalid strength'),
-query('size').optional().isString().withMessage('Invalid size'),
-query('brand').optional().isString().withMessage('Invalid brand'),
-], async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     const {
       page = 1,
       limit = 12,
       category,
       subcategory,
+      subCategory,
       minPrice,
       maxPrice,
       rating,
       sort = 'newest',
       search,
-      latitude,
-      longitude
+      userLatitude,
+      userLongitude,
+      maxDistance
     } = req.query;
 
-    // Build filter object
+    console.log('📡 Products API called with params:', req.query);
+
+    // Build filter object - ONLY check isActive and isApproved
+    // REMOVED STOCK FILTER to show out-of-stock products
     const filter = {
       isActive: true,
-      isApproved: true
+      isApproved: true,
+      'stock.available': { $gt: 0 } // ✅ ONLY show products with stock > 0
+      // ✅ NO STOCK FILTER - Shows all products regardless of stock status
     };
 
     if (category) filter.category = category;
-    if (subcategory) filter.subcategory = subcategory;
+    // Line 116 - REPLACE:
+// if (subcategory) filter.subcategory = subcategory;
+
+// WITH:
+// Line 116 - REPLACE this entire section:
+
+const subcategoryParam = subcategory || subCategory;
+if (subcategoryParam) 
+  {
+  // Create flexible subcategory matching - check both key and display name
+  const subcategoryVariations = [];
+  
+  // Add the original value
+    subcategoryVariations.push(subcategoryParam);
+  
+  // Add common variations for aggregate subcategories
+  // REPLACE your existing subcategoryMap (around lines 131-154) with this complete version:
+
+const subcategoryMap = {
+  // ===== AGGREGATE SUBCATEGORIES =====
+  // Keys to display names
+  'stone_aggregate': ['Stone Aggregate', 'stone aggregate', 'STONE AGGREGATE'],
+  'dust': ['Dust', 'DUST'],
+  '10_mm_metal': ['10 MM Metal', '10mm metal', '10 mm metal', '10MM Metal', '10-mm-metal'],
+  '20_mm_metal': ['20 MM Metal', '20mm metal', '20 mm metal', '20MM Metal', '20-mm-metal'],
+  '40_mm_metal': ['40 MM Metal', '40mm metal', '40 mm metal', '40MM Metal', '40-mm-metal'],
+  'gsb': ['GSB', 'G.S.B', 'Granular Sub Base'],
+  'wmm': ['WMM', 'W.M.M', 'Wet Mix Macadam'],
+  'm_sand': ['M Sand', 'M.Sand', 'M-Sand', 'Manufactured Sand', 'msand', 'MSAND'],
+  
+  // Display names to keys (reverse mapping)
+  'Stone Aggregate': ['stone_aggregate'],
+  'stone aggregate': ['stone_aggregate'], 
+  'STONE AGGREGATE': ['stone_aggregate'],
+  'Dust': ['dust'],
+  'DUST': ['dust'],
+  'dust': ['dust'],
+  
+  '10 MM Metal': ['10_mm_metal'],
+  '10mm metal': ['10_mm_metal'],
+  '10 mm metal': ['10_mm_metal'],
+  '10MM Metal': ['10_mm_metal'],
+  '10-mm-metal': ['10_mm_metal'],
+  
+  '20 MM Metal': ['20_mm_metal'],
+  '20mm metal': ['20_mm_metal'],
+  '20 mm metal': ['20_mm_metal'],
+  '20MM Metal': ['20_mm_metal'],
+  '20-mm-metal': ['20_mm_metal'],
+  
+  '40 MM Metal': ['40_mm_metal'],
+  '40mm metal': ['40_mm_metal'],
+  '40 mm metal': ['40_mm_metal'],
+  '40MM Metal': ['40_mm_metal'],
+  '40-mm-metal': ['40_mm_metal'],
+  
+  'GSB': ['gsb'],
+  'G.S.B': ['gsb'],
+  'Granular Sub Base': ['gsb'],
+  'gsb': ['gsb'],
+  
+  'WMM': ['wmm'],
+  'W.M.M': ['wmm'],
+  'Wet Mix Macadam': ['wmm'],
+  'wmm': ['wmm'],
+  
+  'M Sand': ['m_sand'],
+  'M.Sand': ['m_sand'],
+  'M-Sand': ['m_sand'],
+  'Manufactured Sand': ['m_sand'],
+  'msand': ['m_sand'],
+  'MSAND': ['m_sand'],
+  
+  // ===== SAND SUBCATEGORIES =====
+  'river_sand_plastering': ['River Sand (Plastering)', 'River Sand Plastering', 'river sand plastering'],
+  'river_sand': ['River Sand', 'river sand'],
+  'p_sand': ['P Sand', 'P.Sand', 'Plastering Sand'],
+  'construction_sand': ['Construction Sand', 'construction sand'],
+  
+  // Reverse mapping for sand
+  'River Sand (Plastering)': ['river_sand_plastering'],
+  'River Sand Plastering': ['river_sand_plastering'],
+  'river sand plastering': ['river_sand_plastering'],
+  'River Sand': ['river_sand'],
+  'river sand': ['river_sand'],
+  'P Sand': ['p_sand'],
+  'P.Sand': ['p_sand'],
+  'Plastering Sand': ['p_sand'],
+  'Construction Sand': ['construction_sand'],
+  'construction sand': ['construction_sand'],
+  
+  // ===== TMT STEEL SUBCATEGORIES =====
+  'fe_415': ['FE-415', 'FE 415', 'fe-415', 'Fe415', 'FE415'],
+  'fe_500': ['FE-500', 'FE 500', 'fe-500', 'Fe500', 'FE500'],
+  'fe_550': ['FE-550', 'FE 550', 'fe-550', 'Fe550', 'FE550'],
+  'fe_600': ['FE-600', 'FE 600', 'fe-600', 'Fe600', 'FE600'],
+  
+  // Reverse mapping for TMT steel
+  'FE-415': ['fe_415'],
+  'FE 415': ['fe_415'],
+  'fe-415': ['fe_415'],
+  'Fe415': ['fe_415'],
+  'FE415': ['fe_415'],
+  'FE-500': ['fe_500'],
+  'FE 500': ['fe_500'],
+  'fe-500': ['fe_500'],
+  'Fe500': ['fe_500'],
+  'FE500': ['fe_500'],
+  'FE-550': ['fe_550'],
+  'FE 550': ['fe_550'],
+  'fe-550': ['fe_550'],
+  'Fe550': ['fe_550'],
+  'FE550': ['fe_550'],
+  'FE-600': ['fe_600'],
+  'FE 600': ['fe_600'],
+  'fe-600': ['fe_600'],
+  'Fe600': ['fe_600'],
+  'FE600': ['fe_600'],
+  
+  // ===== BRICKS & BLOCKS SUBCATEGORIES =====
+  'solid_blocks': ['Solid Blocks', 'solid blocks', 'SOLID BLOCKS'],
+  'hollow_blocks': ['Hollow Blocks', 'hollow blocks', 'HOLLOW BLOCKS'],
+  'aac_blocks': ['AAC Blocks', 'aac blocks', 'A.A.C Blocks', 'Autoclaved Aerated Concrete Blocks'],
+  'fly_ash_bricks': ['Fly Ash Bricks', 'fly ash bricks', 'FLY ASH BRICKS'],
+  'clay_bricks': ['Clay Bricks', 'clay bricks', 'Red Bricks', 'red bricks'],
+  'concrete_blocks': ['Concrete Blocks', 'concrete blocks', 'CONCRETE BLOCKS'],
+  
+  // Reverse mapping for bricks & blocks
+  'Solid Blocks': ['solid_blocks'],
+  'solid blocks': ['solid_blocks'],
+  'SOLID BLOCKS': ['solid_blocks'],
+  'Hollow Blocks': ['hollow_blocks'],
+  'hollow blocks': ['hollow_blocks'],
+  'HOLLOW BLOCKS': ['hollow_blocks'],
+  'AAC Blocks': ['aac_blocks'],
+  'aac blocks': ['aac_blocks'],
+  'A.A.C Blocks': ['aac_blocks'],
+  'Autoclaved Aerated Concrete Blocks': ['aac_blocks'],
+  'Fly Ash Bricks': ['fly_ash_bricks'],
+  'fly ash bricks': ['fly_ash_bricks'],
+  'FLY ASH BRICKS': ['fly_ash_bricks'],
+  'Clay Bricks': ['clay_bricks'],
+  'clay bricks': ['clay_bricks'],
+  'Red Bricks': ['clay_bricks'],
+  'red bricks': ['clay_bricks'],
+  'Concrete Blocks': ['concrete_blocks'],
+  'concrete blocks': ['concrete_blocks'],
+  'CONCRETE BLOCKS': ['concrete_blocks'],
+  
+  // ===== CEMENT SUBCATEGORIES =====
+  'opc_53': ['OPC 53 Grade', 'OPC-53', 'opc 53', 'OPC53', 'Ordinary Portland Cement 53'],
+  'opc_43': ['OPC 43 Grade', 'OPC-43', 'opc 43', 'OPC43', 'Ordinary Portland Cement 43'],
+  'ppc': ['PPC', 'Portland Pozzolana Cement', 'P.P.C'],
+  'white_cement': ['White Cement', 'white cement', 'WHITE CEMENT'],
+  'rapid_hardening': ['Rapid Hardening Cement', 'rapid hardening cement'],
+  
+  // Reverse mapping for cement
+  'OPC 53 Grade': ['opc_53'],
+  'OPC-53': ['opc_53'],
+  'opc 53': ['opc_53'],
+  'OPC53': ['opc_53'],
+  'Ordinary Portland Cement 53': ['opc_53'],
+  'OPC 43 Grade': ['opc_43'],
+  'OPC-43': ['opc_43'],
+  'opc 43': ['opc_43'],
+  'OPC43': ['opc_43'],
+  'Ordinary Portland Cement 43': ['opc_43'],
+  'PPC': ['ppc'],
+  'Portland Pozzolana Cement': ['ppc'],
+  'P.P.C': ['ppc'],
+  'White Cement': ['white_cement'],
+  'white cement': ['white_cement'],
+  'WHITE CEMENT': ['white_cement'],
+  'Rapid Hardening Cement': ['rapid_hardening'],
+  'rapid hardening cement': ['rapid_hardening']
+};
+  // Add variations if they exist
+    if (subcategoryMap[subcategoryParam])  {
+        subcategoryVariations.push(...subcategoryMap[subcategoryParam]);
+  }
+  
+  // Use $in operator to match any of the variations
+  filter.subcategory = { $in: subcategoryVariations };
+  
+    console.log(`🔧 Subcategory filter: "${subcategoryParam}" -> matching: [${subcategoryVariations.join(', ')}]`);
+}
     if (minPrice || maxPrice) {
       filter['pricing.basePrice'] = {};
       if (minPrice) filter['pricing.basePrice'].$gte = parseFloat(minPrice);
       if (maxPrice) filter['pricing.basePrice'].$lte = parseFloat(maxPrice);
     }
     if (rating) filter.averageRating = { $gte: parseFloat(rating) };
+
+    console.log('🔍 Filter being used:', JSON.stringify(filter, null, 2));
 
     // Build sort object
     let sortObj = {};
@@ -156,6 +324,9 @@ query('brand').optional().isString().withMessage('Invalid brand'),
       case 'popular':
         sortObj = { salesCount: -1, viewCount: -1 };
         break;
+      case 'distance':
+        sortObj = { createdAt: -1 }; // Will be sorted by distance later
+        break;
       case 'newest':
       default:
         sortObj = { createdAt: -1 };
@@ -167,105 +338,208 @@ query('brand').optional().isString().withMessage('Invalid brand'),
     let products;
     let total;
 
-    if (search) {
-      // Text search
-      const searchResults = await Product.searchProducts(search, {
-        limit: parseInt(limit),
-        skip,
-        category,
-        minPrice: minPrice ? parseFloat(minPrice) : undefined,
-        maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
-        rating: rating ? parseFloat(rating) : undefined
-      });
-      products = searchResults;
-      total = await Product.countDocuments({
-        $text: { $search: search },
-        ...filter
-      });
-    } else {
-      // Regular filtering
-      products = await Product.find(filter)
-        .populate('supplier', 'companyName dispatchLocation rating isApproved')
-        .sort(sortObj)
-        .skip(skip)
-        .limit(parseInt(limit));
+        // UPDATED: Use aggregation pipeline with supplier profile filtering
+    const pipeline = [
+      {
+        $lookup: {
+          from: 'suppliers',
+          localField: 'supplier',
+          foreignField: '_id',
+          as: 'supplierInfo'
+        }
+      },
+      {
+        $match: {
+          ...filter,
+          $or: [
+            // Base products created by admin (always visible if active/approved)
+            { 
+              isBaseProduct: true, 
+              createdByAdmin: true 
+            },
+            // Supplier products (only visible if supplier profile is enabled)
+            {
+              isBaseProduct: { $ne: true },
+              'supplierInfo.profileEnabled': true,
+              'supplierInfo.isActive': true,
+              'supplierInfo.isApproved': true
+            }
+          ]
+        }
+      },
+      {
+        $unwind: {
+          path: '$supplierInfo',
+          preserveNullAndEmptyArrays: true // For base products without suppliers
+        }
+      }
+    ];
 
-      total = await Product.countDocuments(filter);
+    // Add search filter if provided
+    if (search) {
+      pipeline.unshift({
+        $match: {
+          $text: { $search: search }
+        }
+      });
     }
 
-    // If user location is provided, calculate distances and sort by proximity
-    if (latitude && longitude && products.length > 0) {
+    // Add sorting
+    pipeline.push({ $sort: sortObj });
+
+    // Get total count for pagination
+    const countPipeline = [...pipeline];
+    countPipeline.push({ $count: 'total' });
+    const countResult = await Product.aggregate(countPipeline);
+    total = countResult[0]?.total || 0;
+
+    // Add pagination
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: parseInt(limit) });
+
+    // Execute aggregation
+    const aggregatedProducts = await Product.aggregate(pipeline);
+
+    // Transform aggregated results to match expected format
+    products = aggregatedProducts.map(item => ({
+      ...item,
+      supplier: item.supplierInfo ? {
+        _id: item.supplierInfo._id,
+        companyName: item.supplierInfo.companyName,
+        dispatchLocation: item.supplierInfo.dispatchLocation,
+        rating: item.supplierInfo.rating,
+        isApproved: item.supplierInfo.isApproved,
+        profileEnabled: item.supplierInfo.profileEnabled
+      } : null
+    }));
+
+    console.log(`✅ Found ${products.length} products before location processing`);
+    console.log(`📊 Total matching products: ${total}`);
+
+    // Location-based processing if coordinates provided
+    if (userLatitude && userLongitude && products.length > 0) {
+      console.log(`📍 Processing products for location: ${userLatitude}, ${userLongitude}`);
+      
       products = products.map(product => {
-        const productObj = product.toObject();
-        if (product.supplier.dispatchLocation?.coordinates) {
+        const productObj = product.toObject ? product.toObject() : { ...product };
+        
+        if (product.supplier?.dispatchLocation?.coordinates) {
+          let suppLat, suppLng;
+          
+          // Handle different coordinate formats
+          if (Array.isArray(product.supplier.dispatchLocation.coordinates)) {
+            suppLng = product.supplier.dispatchLocation.coordinates[0];
+            suppLat = product.supplier.dispatchLocation.coordinates[1];
+          } else if (product.supplier.dispatchLocation.coordinates.latitude && 
+                     product.supplier.dispatchLocation.coordinates.longitude) {
+            suppLat = product.supplier.dispatchLocation.coordinates.latitude;
+            suppLng = product.supplier.dispatchLocation.coordinates.longitude;
+          } else {
+            productObj.distanceFromUser = 999;
+            productObj.estimatedDeliveryTime = 'Location not available';
+            return productObj;
+          }
+          
           const distance = calculateDistance(
-            parseFloat(latitude),
-            parseFloat(longitude),
-            product.supplier.dispatchLocation.coordinates.latitude,
-            product.supplier.dispatchLocation.coordinates.longitude
+            parseFloat(userLatitude),
+            parseFloat(userLongitude),
+            suppLat,
+            suppLng
           );
+          
           productObj.distanceFromUser = distance;
           productObj.estimatedDeliveryTime = calculateDeliveryTime(distance);
+          
+          console.log(`📍 ${product.name}: ${distance}km away`);
+        } else {
+          console.log(`⚠️ No coordinates for supplier of product: ${product.name}`);
+          productObj.distanceFromUser = 999;
+          productObj.estimatedDeliveryTime = 'Location not available';
         }
+        
         return productObj;
       });
 
-      // Sort by distance if no other sort specified
-      if (sort === 'nearest') {
-        products.sort((a, b) => (a.distanceFromUser || Infinity) - (b.distanceFromUser || Infinity));
+      // Filter by maxDistance if specified
+      if (maxDistance) {
+        const maxDistanceKm = parseFloat(maxDistance);
+        const beforeCount = products.length;
+        products = products.filter(product => 
+          product.distanceFromUser <= maxDistanceKm
+        );
+        console.log(`📍 Filtered from ${beforeCount} to ${products.length} products within ${maxDistanceKm}km`);
+      }
+
+      // Sort by distance if requested
+      if (sort === 'distance') {
+        products.sort((a, b) => 
+          (a.distanceFromUser || Infinity) - (b.distanceFromUser || Infinity)
+        );
+        console.log('📍 Products sorted by distance');
       }
     }
-    
 
-    
+    // Transform products for frontend - INCLUDING OUT OF STOCK PRODUCTS
+    const transformedProducts = products.map(product => {
+const productObj = product.toObject ? product.toObject() : { ...product };      
+      // Get primary image or first available image
+      const primaryImage = productObj.images?.find(img => img.isPrimary) || productObj.images?.[0];
+      
+      return {
+        _id: productObj._id,
+        productId: productObj.productId,
+        name: productObj.name,
+        description: productObj.description,
+        category: productObj.category,
+        subcategory: productObj.subcategory,
+        specifications: productObj.specifications,
+        brand: productObj.brand,
+        images: productObj.images || [],
+        primaryImage: primaryImage?.url || '/placeholder-product.jpg',
+        pricing: {
+          basePrice: productObj.pricing?.basePrice || 0,
+          unit: productObj.pricing?.unit || 'unit',
+          minimumQuantity: productObj.pricing?.minimumQuantity || 1,
+          includesGST: productObj.pricing?.includesGST || false,
+          gstRate: productObj.pricing?.gstRate || 18
+        },
+        stock: {
+          available: productObj.stock?.available || 0, // ✅ Shows actual stock including 0
+          lowStockThreshold: productObj.stock?.lowStockThreshold || 10
+        },
+        averageRating: productObj.averageRating || 0,
+        totalReviews: productObj.totalReviews || 0,
+        salesCount: productObj.salesCount || 0,
+        viewCount: productObj.viewCount || 0,
+        deliveryTime: productObj.deliveryTime || '2-3 days',
+        isActive: productObj.isActive,
+        isApproved: productObj.isApproved,
+        createdAt: productObj.createdAt,
+        supplier: {
+          _id: productObj.supplier?._id,
+          companyName: productObj.supplier?.companyName || 'Unknown Supplier',
+          rating: productObj.supplier?.rating || 0,
+          isApproved: productObj.supplier?.isApproved || false
+        },
+        // Include distance info if available
+        ...(productObj.distanceFromUser !== undefined && {
+          distanceFromUser: productObj.distanceFromUser,
+          estimatedDeliveryTime: productObj.estimatedDeliveryTime
+        })
+      };
+    });
 
-    // Transform products for frontend compatibility
-    // Transform products for frontend compatibility
-// Transform products for frontend compatibility
-const transformedProducts = products.map(product => {
-  const productObj = product.toObject ? product.toObject() : product;
-  
-  // Get primary image or first available image
-  let imageUrl = null;
-  if (productObj.images && productObj.images.length > 0) {
-    const primaryImage = productObj.images.find(img => img.isPrimary);
-    imageUrl = primaryImage ? primaryImage.url : productObj.images[0].url;
-  }
-  
-  return {
-    ...productObj,
-    // Add frontend-expected fields
-    price: productObj.pricing?.basePrice || 0,
-    originalPrice: productObj.pricing?.originalPrice || null,
-    inStock: (productObj.stock?.available || 0) > (productObj.stock?.reserved || 0),
-    image: imageUrl,
-    // Fix supplier information
-    supplier: {
-      _id: productObj.supplier?._id,
-      companyName: productObj.supplier?.companyName || 'Unknown Supplier',
-      rating: productObj.supplier?.rating || { average: 0, count: 0 },
-      isApproved: productObj.supplier?.isApproved || false,
-      dispatchLocation: productObj.supplier?.dispatchLocation
-    },
-    supplierName: productObj.supplier?.companyName || 'Unknown Supplier',
-    // Keep original structure for backward compatibility
-    pricing: productObj.pricing,
-    stock: productObj.stock,
-    images: productObj.images
-  };
-});
-    const totalPages = Math.ceil(total / parseInt(limit));
+    console.log(`🎯 Returning ${transformedProducts.length} products to frontend`);
+
     res.json({
       success: true,
       data: {
-             products: transformedProducts,
+        products: transformedProducts,
         pagination: {
           currentPage: parseInt(page),
-          totalPages,
+          totalPages: Math.ceil(total / parseInt(limit)),
           totalItems: total,
-          itemsPerPage: parseInt(limit),
-          hasNextPage: parseInt(page) < totalPages,
-          hasPrevPage: parseInt(page) > 1
+          itemsPerPage: parseInt(limit)
         },
         filters: {
           category,
@@ -274,16 +548,126 @@ const transformedProducts = products.map(product => {
           maxPrice,
           rating,
           sort,
-          search
+          search,
+          ...(userLatitude && userLongitude && {
+            location: {
+              latitude: parseFloat(userLatitude),
+              longitude: parseFloat(userLongitude),
+              maxDistance: maxDistance ? parseFloat(maxDistance) : null
+            }
+          })
         }
       }
     });
 
   } catch (error) {
+    console.error('❌ Products API Error:', error);
     next(error);
   }
 });
 
+// @route   GET /api/products/featured
+// @desc    Get featured/top-rated products for homepage
+// @access  Public
+router.get('/featured', optionalAuth, async (req, res, next) => {
+  try {
+    const { type = 'top-rated', limit = 6 } = req.query;
+    
+    let filter = {
+      isActive: true,
+      isApproved: true
+    };
+    
+    let sortObj = {};
+    
+    switch (type) {
+      case 'top-rated':
+        // Products with rating >= 3.5 and at least 1 review
+        filter.averageRating = { $gte: 3.5 };
+        filter.totalReviews = { $gte: 1 };
+        sortObj = { averageRating: -1, totalReviews: -1 };
+        break;
+        
+      case 'popular':
+        // Most ordered products
+        sortObj = { salesCount: -1, viewCount: -1 };
+        break;
+        
+      case 'newest':
+        // Recently added products
+        sortObj = { createdAt: -1 };
+        break;
+        
+      case 'trending':
+        // Products with high recent activity
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        filter.createdAt = { $gte: thirtyDaysAgo };
+        sortObj = { viewCount: -1, salesCount: -1 };
+        break;
+        
+      default:
+        // Default to newest if no top-rated products
+        sortObj = { createdAt: -1 };
+    }
+    
+    let products = await Product.find(filter)
+      .populate('supplier', 'companyName location rating isApproved')
+      .sort(sortObj)
+      .limit(parseInt(limit));
+    
+    // If no top-rated products found, get newest products
+    if (products.length === 0 && type === 'top-rated') {
+      products = await Product.find({
+        isActive: true,
+        isApproved: true
+      })
+      .populate('supplier', 'companyName location rating isApproved')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    }
+    
+    // Transform products for frontend
+    const transformedProducts = products.map(product => {
+      const productObj = product.toObject ? product.toObject() : { ...product };
+      
+      // Get primary image or first available image
+      let imageUrl = null;
+      if (productObj.images && productObj.images.length > 0) {
+        const primaryImage = productObj.images.find(img => img.isPrimary);
+        imageUrl = primaryImage ? primaryImage.url : productObj.images[0].url;
+      }
+      
+      return {
+        ...productObj,
+        price: productObj.pricing?.basePrice || 0,
+        originalPrice: productObj.pricing?.originalPrice || null,
+        inStock: (productObj.stock?.available || 0) > (productObj.stock?.reserved || 0),
+        image: imageUrl,
+        supplier: {
+          _id: productObj.supplier?._id,
+          companyName: productObj.supplier?.companyName || 'Unknown Supplier',
+          location: productObj.supplier?.location || {},
+          rating: productObj.supplier?.rating || { average: 0, count: 0 },
+          isApproved: productObj.supplier?.isApproved || false
+        },
+        supplierName: productObj.supplier?.companyName || 'Unknown Supplier'
+      };
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        products: transformedProducts,
+        type,
+        count: transformedProducts.length
+      }
+    });
+    
+  } catch (error) {
+    next(error);
+  }
+});
 // @route   GET /api/products/:productId
 // @desc    Get single product details
 // @access  Public
@@ -311,7 +695,7 @@ router.get('/:productId', optionalAuth, [
       isActive: true,
       isApproved: true
     })
-    .populate('supplier', 'companyName dispatchLocation rating totalOrders isApproved')
+    .populate('supplier', 'companyName dispatchLocation rating totalOrders isApproved transportRates')
     .populate('reviews.user', 'name customerType');
 
     if (!product) {
@@ -922,6 +1306,9 @@ router.get('/supplier/my-products', auth, authorize('supplier'), [
     // Replace lines 907-926 with this:
 
 // Handle status filter - IMPROVED
+// Replace the status filter section (around lines 1117-1138)
+
+// Handle status filter - SHOW ALL PRODUCTS INCLUDING INACTIVE
 if (status && status !== 'all' && status.trim() !== '') {
   console.log('📊 Applying status filter:', status.trim());
   switch (status.trim()) {
@@ -938,15 +1325,18 @@ if (status && status !== 'all' && status.trim() !== '') {
     case 'approved':
       filter.isApproved = true;
       break;
-    default:
-      // For 'all' and unknown status, show only active products
+    case 'in-stock':
       filter.isActive = true;
+      break;
+    case 'out-of-stock':
+      filter.isActive = false;
       break;
   }
 } else {
-  // Default behavior: show only active products (hide soft-deleted ones)
-  filter.isActive = true;
-}
+  // For 'all' status: show ALL products (both active and inactive)
+  // Remove the default isActive filter to show all products
+  console.log('📊 Showing all products (active and inactive)');
+} 
 
     // Handle search filter
     if (search && search.trim() !== '') {
@@ -1013,7 +1403,7 @@ if (status && status !== 'all' && status.trim() !== '') {
     // Transform products to match frontend expectations
 // Transform products to match frontend expectations
 const transformedProducts = products.map((product, index) => {
-  const productObj = product.toObject();
+  const productObj = product.toObject ? product.toObject() : { ...product };
   
   // Determine status based on isActive and isApproved
   let status = 'pending';
@@ -1251,6 +1641,117 @@ router.get('/:productId/reviews', [
     next(error);
   }
 });
+router.get('/suppliers-with-distance', [
+  query('latitude').isFloat({ min: -90, max: 90 }).withMessage('Valid latitude required'),
+  query('longitude').isFloat({ min: -180, max: 180 }).withMessage('Valid longitude required'),
+  query('maxDistance').optional().isFloat({ min: 0 }).withMessage('Invalid max distance')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { latitude, longitude, maxDistance = 50 } = req.query;
+    const userLocation = [parseFloat(longitude), parseFloat(latitude)];
+
+    // Find suppliers within distance using aggregation
+    const suppliers = await Product.aggregate([
+      {
+        $lookup: {
+          from: 'suppliers',
+          localField: 'supplier',
+          foreignField: '_id',
+          as: 'supplierData'
+        }
+      },
+      {
+        $unwind: '$supplierData'
+      },
+      {
+        $match: {
+          'supplierData.status': 'active',
+          'supplierData.businessDetails.isVerified': true,
+          'supplierData.location.coordinates': { $exists: true }
+        }
+      },
+      {
+        $addFields: {
+          distance: {
+            $divide: [
+              {
+                $sqrt: {
+                  $add: [
+                    {
+                      $pow: [
+                        {
+                          $multiply: [
+                            { $subtract: [{ $arrayElemAt: ['$supplierData.location.coordinates', 1] }, parseFloat(latitude)] },
+                            111.32
+                          ]
+                        },
+                        2
+                      ]
+                    },
+                    {
+                      $pow: [
+                        {
+                          $multiply: [
+                            { $subtract: [{ $arrayElemAt: ['$supplierData.location.coordinates', 0] }, parseFloat(longitude)] },
+                            { $multiply: [111.32, { $cos: { $multiply: [parseFloat(latitude), Math.PI / 180] } }] }
+                          ]
+                        },
+                        2
+                      ]
+                    }
+                  ]
+                }
+              },
+              1
+            ]
+          }
+        }
+      },
+      {
+        $match: {
+          distance: { $lte: parseFloat(maxDistance) }
+        }
+      },
+      {
+        $group: {
+          _id: '$supplierData._id',
+          businessName: { $first: '$supplierData.businessDetails.businessName' },
+          location: { $first: '$supplierData.location' },
+          distance: { $first: '$distance' },
+          contactInfo: { $first: '$supplierData.contactInfo.email' },
+          rating: { $first: '$supplierData.ratings.average' },
+          totalProducts: { $sum: 1 },
+          isVerified: { $first: '$supplierData.businessDetails.isVerified' }
+        }
+      },
+      {
+        $sort: { distance: 1 }
+      },
+      { $limit: 20 }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        suppliers,
+        userLocation: { latitude: parseFloat(latitude), longitude: parseFloat(longitude) },
+        maxDistance: parseFloat(maxDistance)
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Utility functions
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -1277,5 +1778,59 @@ function calculateDeliveryTime(distance) {
   if (distance <= 50) return '1-2 days';
   return '2-3 days';
 }
+
+// Add before the module.exports line (around line 1584)
+
+// @route   PUT /api/products/:id/toggle-stock
+// @desc    Toggle product stock availability (supplier only)
+// @access  Private
+router.put('/:id/toggle-stock', 
+  auth, 
+  authorize(['supplier']),
+  async (req, res, next) => {
+    try {
+      // Find the supplier
+      const supplier = await Supplier.findOne({ user: req.user._id });
+      if (!supplier) {
+        return res.status(404).json({
+          success: false,
+          message: 'Supplier profile not found'
+        });
+      }
+
+      // Find the product and verify ownership
+      const product = await Product.findOne({
+        _id: req.params.id,
+        supplier: supplier._id
+      });
+
+      if (!product) {
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found or you do not have permission to modify it'
+        });
+      }
+
+      // Toggle the isActive status
+      product.isActive = !product.isActive;
+      await product.save();
+
+      res.json({
+        success: true,
+        message: `Product ${product.isActive ? 'activated' : 'deactivated'} successfully`,
+        data: {
+          productId: product._id,
+          name: product.name,
+          isActive: product.isActive,
+          stockStatus: product.isActive ? 'In Stock' : 'Out of Stock'
+        }
+      });
+
+    } catch (error) {
+      console.error('Toggle stock error:', error);
+      next(error);
+    }
+  }
+);
 
 module.exports = router;

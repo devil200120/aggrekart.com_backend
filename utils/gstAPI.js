@@ -206,6 +206,7 @@ const searchGSTDetails = async (gstNumber, accessToken) => {
 };
 
 // Parse GST data from Masters India API response (based on Postman structure)
+// Parse GST data from Masters India API response - FIXED VERSION
 const parseGSTData = (gstData) => {
   debugLog('📊 Parsing GST data structure:', {
     gstin: gstData.gstin,
@@ -213,71 +214,111 @@ const parseGSTData = (gstData) => {
     dty: gstData.dty,
     stj: gstData.stj,
     hasAddr: !!gstData.adadr,
+    hasPrimaryAddr: !!gstData.pradr,
     hasNba: !!gstData.nba
   });
   
   try {
-    // Extract address information - handle the structure from Postman
-    let addressData = {};
-    if (gstData.adadr && Array.isArray(gstData.adadr) && gstData.adadr.length > 0) {
-      // Use first address if multiple addresses exist
-      addressData = gstData.adadr[0] || {};
+    // FIXED: Extract MAIN ADDRESS from pradr (primary address)
+    let mainAddress = '';
+    let mainPincode = '';
+    let mainCity = '';
+    let mainDistrict = '';
+    
+    if (gstData.pradr && gstData.pradr.addr) {
+      const addr = gstData.pradr.addr;
+      
+      // Build complete address from components
+      const addressComponents = [
+        addr.bno,    // Building Number  
+        addr.bnm,    // Building Name
+        addr.st,     // Street
+        addr.loc,    // Location
+        addr.dst,    // District
+      ].filter(component => component && component.trim() && component !== 'null');
+      
+      mainAddress = addressComponents.join(', ');
+      mainPincode = addr.pncd || '';
+      mainCity = addr.loc || addr.dst || '';
+      mainDistrict = addr.dst || '';
     }
     
-    // Build complete address from components
-    const addressComponents = [
-      addressData.bno,    // Building Number
-      addressData.bnm,    // Building Name
-      addressData.flno,   // Floor Number
-      addressData.st,     // Street
-      addressData.loc,    // Location
-    ].filter(component => component && component.trim() && component !== 'null');
-    
-    const fullAddress = addressComponents.join(', ');
+    // FIXED: If main address is empty, use FIRST additional address with pincode
+    if (!mainAddress || !mainPincode) {
+      const addressesWithPincode = (gstData.adadr || []).filter(addr => 
+        addr.addr && addr.addr.pncd && addr.addr.pncd.trim()
+      );
+      
+      if (addressesWithPincode.length > 0) {
+        const firstAddr = addressesWithPincode[0].addr;
+        
+        if (!mainAddress) {
+          const addrComponents = [
+            firstAddr.bno,
+            firstAddr.bnm, 
+            firstAddr.st,
+            firstAddr.loc,
+            firstAddr.dst,
+          ].filter(c => c && c.trim() && c !== 'null');
+          
+          mainAddress = addrComponents.join(', ');
+        }
+        
+        if (!mainPincode) mainPincode = firstAddr.pncd;
+        if (!mainCity) mainCity = firstAddr.loc || firstAddr.dst;
+        if (!mainDistrict) mainDistrict = firstAddr.dst;
+      }
+    }
     
     // State code to name mapping
     const stateMapping = {
-      '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
-      '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
-      '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
-      '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura',
-      '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
-      '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
+      '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab',
+      '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana',
+      '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh',
+      '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
+      '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram',
+      '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam',
+      '19': 'West Bengal', '20': 'Jharkhand', '21': 'Odisha',
+      '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
       '25': 'Daman and Diu', '26': 'Dadra and Nagar Haveli', '27': 'Maharashtra',
       '28': 'Andhra Pradesh', '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep',
       '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry', '35': 'Andaman and Nicobar Islands',
       '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh'
     };
     
-    const stateCode = addressData.stcd || gstData.gstin?.substring(0, 2);
-    const stateName = stateMapping[stateCode] || 'Unknown State';
-    
+    const stateCode = gstData.gstin?.substring(0, 2) || '24';
+    const stateName = stateMapping[stateCode] || 'Gujarat';
+    const extractPANFromGST = (gstNumber) => {
+  if (gstNumber && gstNumber.length === 15) {
+    return gstNumber.substring(2, 12); // Characters 3-12 are PAN
+  }
+  return '';
+};
+const panNumber = extractPANFromGST(gstData.gstin);
     // Parse business nature from 'nba' array
     let businessNature = 'Not specified';
     if (gstData.nba && Array.isArray(gstData.nba) && gstData.nba.length > 0) {
-      businessNature = gstData.nba[0] || 'Not specified';
+      businessNature = gstData.nba.join(', ');
     }
     
     const parsedData = {
       // Basic GST Information
       gstNumber: gstData.gstin || '',
       legalName: gstData.lgnm || '',
+      panNumber: panNumber, // EXTRACTED PAN NUMBER
       tradeName: gstData.tradeNam || gstData.lgnm || '',
       registrationDate: gstData.rgdt || '',
       gstStatus: gstData.sts || '',
       taxpayerType: gstData.dty || '',
-      
-      // Address Information
-      address: fullAddress || '',
-      buildingNumber: addressData.bno || '',
-      buildingName: addressData.bnm || '',
-      street: addressData.st || '',
-      location: addressData.loc || '',
-      district: addressData.dst || '',
-      city: addressData.city || addressData.dst || '',
+      // Line 301 - ADD THIS NEW LINE:
+       
+      // FIXED: Address Information using extracted data
+      address: mainAddress,
+      city: mainCity,
+      district: mainDistrict,
       state: stateName,
-      stateCode: stateCode || '',
-      pincode: addressData.pncd || '',
+      stateCode: stateCode,
+      pincode: mainPincode,
       
       // Business Information
       businessNature: businessNature,
@@ -299,9 +340,11 @@ const parseGSTData = (gstData) => {
     debugLog('✅ Successfully parsed GST data:', {
       gstNumber: parsedData.gstNumber,
       legalName: parsedData.legalName,
+      address: parsedData.address?.substring(0, 50) + '...',
       city: parsedData.city,
       state: parsedData.state,
-      businessNature: parsedData.businessNature
+      pincode: parsedData.pincode,
+      businessNature: parsedData.businessNature?.substring(0, 50) + '...'
     });
     
     return parsedData;
@@ -311,7 +354,6 @@ const parseGSTData = (gstData) => {
     throw new Error(`Failed to parse GST data: ${error.message}`);
   }
 };
-
 // Main function to get GST details
 const getGSTDetails = async (gstNumber) => {
   debugLog('🚀 Starting GST details retrieval process...');
@@ -398,4 +440,5 @@ module.exports = {
   searchGSTDetails,
   parseGSTData,
   MASTERS_INDIA_CONFIG
+
 };

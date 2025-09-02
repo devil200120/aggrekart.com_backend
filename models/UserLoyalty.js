@@ -21,15 +21,19 @@ const userLoyaltySchema = new mongoose.Schema({
       default: 0
     }
   },
+  // Update the transactions type enum (around line 33)
+
   transactions: [{
     type: {
       type: String,
-      enum: ['earned', 'redeemed', 'expired', 'bonus', 'referral'],
+      enum: ['earned', 'redeemed', 'expired', 'bonus', 'referral', 'admin_award', 'coupon_awarded', 'coupon_used'],
       required: true
     },
     amount: {
       type: Number,
-      required: true
+      required: function() {
+        return ['earned', 'redeemed', 'expired', 'bonus', 'referral', 'admin_award'].includes(this.type);
+      }
     },
     description: String,
     order: {
@@ -40,7 +44,12 @@ const userLoyaltySchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'LoyaltyProgram'
     },
+    metadata: mongoose.Schema.Types.Mixed, // For storing additional data like coupon details
     expiresAt: Date,
+    date: {
+      type: Date,
+      default: Date.now
+    },
     createdAt: {
       type: Date,
       default: Date.now
@@ -94,6 +103,10 @@ const userLoyaltySchema = new mongoose.Schema({
     totalSavings: {
       type: Number,
       default: 0
+    },
+    enrolledAt: {
+      type: Date,
+      default: Date.now
     }
   }],
   milestones: [{
@@ -106,6 +119,32 @@ const userLoyaltySchema = new mongoose.Schema({
       default: Date.now
     },
     rewardEarned: Number
+  }],
+  coupons: [{
+    couponProgram: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'LoyaltyProgram',
+      required: true
+    },
+    awardedAt: {
+      type: Date,
+      default: Date.now
+    },
+    awardedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: String,
+    used: {
+      type: Boolean,
+      default: false
+    },
+    usedAt: Date,
+    usedInOrder: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Order'
+    },
+    discountApplied: Number
   }]
 }, {
   timestamps: true
@@ -178,6 +217,7 @@ userLoyaltySchema.methods.completeReferral = function(referredUserId, reward) {
 };
 
 // Check and award milestones
+// Update the checkMilestones method around line 220
 userLoyaltySchema.methods.checkMilestones = async function(orderCount, totalOrderValue) {
   const milestoneRewards = {
     first_order: 100,
@@ -192,20 +232,20 @@ userLoyaltySchema.methods.checkMilestones = async function(orderCount, totalOrde
 
   const newMilestones = [];
 
-  // Order count milestones
-  if (orderCount === 1 && !this.milestones.some(m => m.type === 'first_order')) {
+  // Order count milestones - check >= instead of === to catch missed milestones
+  if (orderCount >= 1 && !this.milestones.some(m => m.type === 'first_order')) {
     newMilestones.push('first_order');
   }
-  if (orderCount === 5 && !this.milestones.some(m => m.type === 'orders_5')) {
+  if (orderCount >= 5 && !this.milestones.some(m => m.type === 'orders_5')) {
     newMilestones.push('orders_5');
   }
-  if (orderCount === 20 && !this.milestones.some(m => m.type === 'orders_20')) {
+  if (orderCount >= 20 && !this.milestones.some(m => m.type === 'orders_20')) {
     newMilestones.push('orders_20');
   }
-  if (orderCount === 50 && !this.milestones.some(m => m.type === 'orders_50')) {
+  if (orderCount >= 50 && !this.milestones.some(m => m.type === 'orders_50')) {
     newMilestones.push('orders_50');
   }
-  if (orderCount === 100 && !this.milestones.some(m => m.type === 'orders_100')) {
+  if (orderCount >= 100 && !this.milestones.some(m => m.type === 'orders_100')) {
     newMilestones.push('orders_100');
   }
 
@@ -233,6 +273,52 @@ userLoyaltySchema.methods.checkMilestones = async function(orderCount, totalOrde
   return newMilestones;
 };
 
+userLoyaltySchema.methods.addCoupon = function(couponProgramId, awardedBy, reason) {
+  this.coupons.push({
+    couponProgram: couponProgramId,
+    awardedBy,
+    reason,
+    used: false
+  });
+  
+  this.transactions.push({
+    type: 'coupon_awarded',
+    description: `Coupon awarded: ${reason}`,
+    metadata: {
+      couponProgramId,
+      awardedBy,
+      reason
+    }
+  });
+};
+
+// Use coupon
+userLoyaltySchema.methods.useCoupon = function(couponId, orderId, discountApplied) {
+  const coupon = this.coupons.id(couponId);
+  if (!coupon || coupon.used) {
+    throw new Error('Coupon not found or already used');
+  }
+  
+  coupon.used = true;
+  coupon.usedAt = new Date();
+  coupon.usedInOrder = orderId;
+  coupon.discountApplied = discountApplied;
+  
+  this.transactions.push({
+    type: 'coupon_used',
+    description: `Coupon used in order`,
+    metadata: {
+      couponId,
+      orderId,
+      discountApplied
+    }
+  });
+};
+
+// Get available coupons for user
+userLoyaltySchema.methods.getAvailableCoupons = function() {
+  return this.coupons.filter(coupon => !coupon.used);
+};
 // Expire old coins
 userLoyaltySchema.methods.expireOldCoins = function() {
   const now = new Date();

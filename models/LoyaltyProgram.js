@@ -11,9 +11,11 @@ const loyaltyProgramSchema = new mongoose.Schema({
     required: [true, 'Program name is required'],
     trim: true
   },
+  // Update the type enum to include 'coupon' (around line 18)
+
   type: {
     type: String,
-    enum: ['referral', 'purchase', 'milestone', 'seasonal', 'category_specific'],
+    enum: ['referral', 'purchase', 'milestone', 'seasonal', 'category_specific', 'coupon'],
     required: true
   },
   supplier: {
@@ -107,6 +109,57 @@ const loyaltyProgramSchema = new mongoose.Schema({
       type: Number,
       default: 10
     }
+  },
+  couponDetails: {
+    code: {
+      type: String,
+      uppercase: true,
+      required: function() {
+        return this.type === 'coupon';
+      }
+    },
+    discountType: {
+      type: String,
+      enum: ['percentage', 'fixed'],
+      required: function() {
+        return this.type === 'coupon';
+      }
+    },
+    discountValue: {
+      type: Number,
+      required: function() {
+        return this.type === 'coupon';
+      }
+    },
+    minOrderAmount: {
+      type: Number,
+      default: 0
+    },
+    maxDiscount: {
+      type: Number,
+      required: function() {
+        return this.type === 'coupon' && this.discountType === 'percentage';
+      }
+    },
+    usageLimit: {
+      type: Number,
+      default: null // null means unlimited
+    },
+    usedCount: {
+      type: Number,
+      default: 0
+    },
+    customerTypes: [{
+      type: String,
+      enum: ['house_owner', 'mason', 'builder_contractor', 'others']
+    }]
+  },
+  validFrom: {
+    type: Date,
+    default: Date.now
+  },
+  validUntil: {
+    type: Date
   },
   isActive: {
     type: Boolean,

@@ -18,7 +18,7 @@ const supplierSchema = new mongoose.Schema({
 gstNumber: {
   type: String,
   sparse: true, // Allows multiple null values, but unique non-null values
-  unique: true,
+  
   validate: {
     validator: function(v) {
       // Allow empty/null GST numbers
@@ -160,7 +160,7 @@ supplierControls: {
   pricing: {
     basePrice: {
       type: Number,
-      required: true
+      required: false
     },
     lastUpdated: {
       type: Date,
@@ -215,53 +215,93 @@ createdByAdmin: {
   },
   
   // Transport Rates
-  transportRates: {
-    upTo5km: {
-      costPerKm: {
-        type: Number,
-        min: 0,
-        default: 0
-      },
-      estimatedDeliveryTime: {
-        type: String,
-        default: '2-4 hours'
-      }
+  // Replace lines 218-255 in models/Supplier.js with this:
+transportRates: {
+  upTo5km: {
+    costPerKm: {
+      type: Number,
+      min: 0,
+      default: 0
     },
-    upTo10km: {
-      costPerKm: {
-        type: Number,
-        min: 0,
-        default: 0
-      },
-      estimatedDeliveryTime: {
-        type: String,
-        default: '4-6 hours'
-      }
+    baseCost: {
+      type: Number,
+      min: 0,
+      default: 0
     },
-    upTo20km: {
-      costPerKm: {
-        type: Number,
-        min: 0,
-        default: 0
-      },
-      estimatedDeliveryTime: {
-        type: String,
-        default: '6-8 hours'
-      }
+    estimatedDeliveryTime: {
+      type: String,
+      default: '2-4 hours'
     },
-    above20km: {
-      costPerKm: {
-        type: Number,
-        min: 0,
-        default: 0
-      },
-      estimatedDeliveryTime: {
-        type: String,
-        default: '1-2 days'
-      }
+    maxWeight: {
+      type: Number,
+      min: 1,
+      default: 1000
     }
   },
-  
+  upTo10km: {
+    costPerKm: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    baseCost: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    estimatedDeliveryTime: {
+      type: String,
+      default: '4-6 hours'
+    },
+    maxWeight: {
+      type: Number,
+      min: 1,
+      default: 2000
+    }
+  },
+  upTo20km: {
+    costPerKm: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    baseCost: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    estimatedDeliveryTime: {
+      type: String,
+      default: '6-8 hours'
+    },
+    maxWeight: {
+      type: Number,
+      min: 1,
+      default: 3000
+    }
+  },
+  above20km: {
+    costPerKm: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    baseCost: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    estimatedDeliveryTime: {
+      type: String,
+      default: '1-2 days'
+    },
+    maxWeight: {
+      type: Number,
+      min: 1,
+      default: 5000
+    }
+  }
+},
   // Business Settings
   commissionRate: {
     type: Number,
@@ -278,6 +318,20 @@ createdByAdmin: {
   isActive: {
     type: Boolean,
     default: true
+  },
+   profileEnabled: {
+    type: Boolean,
+    default: true,
+    index: true // Index for faster queries
+  },
+  profileDisabledAt: {
+    type: Date,
+    default: null
+  },
+  profileDisabledReason: {
+    type: String,
+    trim: true,
+    maxlength: 500
   },
   
   // Approval/Rejection Details
@@ -411,7 +465,7 @@ createdByAdmin: {
 });
 
 // Indexes
-supplierSchema.index({ gstNumber: 1 });
+// supplierSchema.index({ gstNumber: 1 });
 supplierSchema.index({ 'dispatchLocation.coordinates': '2dsphere' });
 supplierSchema.index({ isApproved: 1, isActive: 1 });
 supplierSchema.index({ categories: 1 });
