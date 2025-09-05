@@ -1,0 +1,844 @@
+{
+  "health": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot../health not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "appConfig": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "supportInfo": {
+          "phone": "+91-9876543210",
+          "email": "support@aggrekart.com",
+          "whatsapp": "+91-9876543210"
+        },
+        "appVersion": {
+          "current": "1.0.0",
+          "minimum": "1.0.0"
+        },
+        "features": {
+          "liveTracking": true,
+          "otpDelivery": true,
+          "cashCollection": true
+        }
+      }
+    }
+  },
+  "register": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "value": "motorcycle",
+          "msg": "Invalid vehicle type",
+          "path": "vehicleDetails.vehicleType",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "requestOTP": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "OTP sent successfully",
+      "data": {
+        "otpSent": true,
+        "otp": "827890"
+      }
+    }
+  },
+  "login": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "Login successful",
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "isAvailable": false,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          }
+        },
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaWxvdElkIjoiNjhiNWU4OTUxODcyYmZmNTU0OGYxYWI5IiwiaWF0IjoxNzU2OTc4OTc0LCJleHAiOjE3NTk1NzA5NzR9.zWZfld_5k4yq0e5SUuf7ljeNfxKH527OksvG_XuG5sI"
+      }
+    }
+  },
+  "profile": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/profile not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "updateLocation": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "Location updated successfully",
+      "data": {
+        "location": {
+          "latitude": 20.2961,
+          "longitude": 85.8245,
+          "lastUpdated": "2025-09-04T09:42:54.500Z"
+        }
+      }
+    }
+  },
+  "availability": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/availability not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "stats": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "totalDeliveries": 1,
+          "isAvailable": false,
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "joinedDate": "2025-09-01T18:40:21.539Z"
+        },
+        "stats": {
+          "_id": null,
+          "totalDeliveries": 1,
+          "totalRevenue": 148,
+          "avgDeliveryTime": 148,
+          "lastMonth": 1,
+          "thisWeek": 1,
+          "monthlyEarnings": 1435818.950407789,
+          "monthlyDeliveries": 1
+        },
+        "recentDeliveries": [
+          {
+            "pricing": {
+              "totalAmount": 148
+            },
+            "delivery": {
+              "actualDeliveryTime": "2025-09-01T19:38:31.034Z"
+            },
+            "_id": "689f5906a93dac5fd8b77078",
+            "orderId": "AGK1755273478411UWC",
+            "customer": {
+              "_id": "689209c693ad74cc3ed85507",
+              "name": "Subhankar Dash"
+            }
+          }
+        ],
+        "performance": {
+          "averageRating": 5,
+          "totalRatings": 1,
+          "onTimeDeliveryRate": 95,
+          "customerSatisfactionRate": 98
+        }
+      }
+    }
+  },
+  "dashboard": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/dashboard-stats not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "availableNearbyOrders": [
+    {
+      "testCase": "Default parameters",
+      "success": true,
+      "status": 200,
+      "data": {
+        "success": true,
+        "message": "Found 2 available orders within 15km radius",
+        "data": {
+          "orders": [
+            {
+              "_id": "689e24d2ee6b31be0f10a1d3",
+              "orderId": "AGK17551945784118TC",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 246,
+                "transportCost": 236.79059592250917,
+                "itemsCount": 1,
+                "estimatedEarning": 165.7534171457564,
+                "orderTime": "2025-08-14T18:02:58.433Z",
+                "status": "processing"
+              },
+              "distance": 4.73,
+              "priority": "high",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            },
+            {
+              "_id": "689dad9e1b6ebfe50374e4ba",
+              "orderId": "AGK17551640624699WI",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 984,
+                "transportCost": 25690.751900433843,
+                "itemsCount": 1,
+                "estimatedEarning": 17983.526330303688,
+                "orderTime": "2025-08-14T09:34:22.489Z",
+                "status": "confirmed"
+              },
+              "distance": 4.73,
+              "priority": "normal",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            }
+          ],
+          "summary": {
+            "totalAvailableOrders": 2,
+            "ordersInCurrentPage": 2,
+            "totalPotentialEarnings": 18149.28,
+            "averageDistance": 4.73
+          },
+          "filters": {
+            "radius": 15,
+            "orderType": "all",
+            "pilotLocation": {
+              "latitude": 20.2961,
+              "longitude": 85.8245,
+              "lastUpdated": "2025-09-04T09:42:54.500Z"
+            }
+          },
+          "pagination": {
+            "currentPage": 1,
+            "totalPages": 1,
+            "totalItems": 2,
+            "hasNext": false,
+            "hasPrev": false,
+            "itemsPerPage": 10
+          }
+        }
+      },
+      "hasOrders": true,
+      "ordersCount": 2,
+      "hasSummary": true,
+      "hasFilters": true,
+      "hasPagination": true
+    },
+    {
+      "testCase": "5km radius",
+      "success": true,
+      "status": 200,
+      "data": {
+        "success": true,
+        "message": "Found 2 available orders within 5km radius",
+        "data": {
+          "orders": [
+            {
+              "_id": "689e24d2ee6b31be0f10a1d3",
+              "orderId": "AGK17551945784118TC",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 246,
+                "transportCost": 236.79059592250917,
+                "itemsCount": 1,
+                "estimatedEarning": 165.7534171457564,
+                "orderTime": "2025-08-14T18:02:58.433Z",
+                "status": "processing"
+              },
+              "distance": 4.73,
+              "priority": "high",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            },
+            {
+              "_id": "689dad9e1b6ebfe50374e4ba",
+              "orderId": "AGK17551640624699WI",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 984,
+                "transportCost": 25690.751900433843,
+                "itemsCount": 1,
+                "estimatedEarning": 17983.526330303688,
+                "orderTime": "2025-08-14T09:34:22.489Z",
+                "status": "confirmed"
+              },
+              "distance": 4.73,
+              "priority": "normal",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            }
+          ],
+          "summary": {
+            "totalAvailableOrders": 2,
+            "ordersInCurrentPage": 2,
+            "totalPotentialEarnings": 18149.28,
+            "averageDistance": 4.73
+          },
+          "filters": {
+            "radius": 5,
+            "orderType": "all",
+            "pilotLocation": {
+              "latitude": 20.2961,
+              "longitude": 85.8245,
+              "lastUpdated": "2025-09-04T09:42:54.500Z"
+            }
+          },
+          "pagination": {
+            "currentPage": 1,
+            "totalPages": 1,
+            "totalItems": 2,
+            "hasNext": false,
+            "hasPrev": false,
+            "itemsPerPage": 10
+          }
+        }
+      },
+      "hasOrders": true,
+      "ordersCount": 2,
+      "hasSummary": true,
+      "hasFilters": true,
+      "hasPagination": true
+    },
+    {
+      "testCase": "10km with pagination",
+      "success": true,
+      "status": 200,
+      "data": {
+        "success": true,
+        "message": "Found 2 available orders within 10km radius",
+        "data": {
+          "orders": [
+            {
+              "_id": "689e24d2ee6b31be0f10a1d3",
+              "orderId": "AGK17551945784118TC",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 246,
+                "transportCost": 236.79059592250917,
+                "itemsCount": 1,
+                "estimatedEarning": 165.7534171457564,
+                "orderTime": "2025-08-14T18:02:58.433Z",
+                "status": "processing"
+              },
+              "distance": 4.73,
+              "priority": "high",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            },
+            {
+              "_id": "689dad9e1b6ebfe50374e4ba",
+              "orderId": "AGK17551640624699WI",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 984,
+                "transportCost": 25690.751900433843,
+                "itemsCount": 1,
+                "estimatedEarning": 17983.526330303688,
+                "orderTime": "2025-08-14T09:34:22.489Z",
+                "status": "confirmed"
+              },
+              "distance": 4.73,
+              "priority": "normal",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            }
+          ],
+          "summary": {
+            "totalAvailableOrders": 2,
+            "ordersInCurrentPage": 2,
+            "totalPotentialEarnings": 18149.28,
+            "averageDistance": 4.73
+          },
+          "filters": {
+            "radius": 10,
+            "orderType": "all",
+            "pilotLocation": {
+              "latitude": 20.2961,
+              "longitude": 85.8245,
+              "lastUpdated": "2025-09-04T09:42:54.500Z"
+            }
+          },
+          "pagination": {
+            "currentPage": 1,
+            "totalPages": 1,
+            "totalItems": 2,
+            "hasNext": false,
+            "hasPrev": false,
+            "itemsPerPage": 5
+          }
+        }
+      },
+      "hasOrders": true,
+      "ordersCount": 2,
+      "hasSummary": true,
+      "hasFilters": true,
+      "hasPagination": true
+    },
+    {
+      "testCase": "Urgent orders only",
+      "success": true,
+      "status": 200,
+      "data": {
+        "success": true,
+        "message": "Found 0 available orders within 15km radius",
+        "data": {
+          "orders": [],
+          "summary": {
+            "totalAvailableOrders": 0,
+            "ordersInCurrentPage": 0,
+            "totalPotentialEarnings": 0,
+            "averageDistance": 0
+          },
+          "filters": {
+            "radius": 15,
+            "orderType": "urgent",
+            "pilotLocation": {
+              "latitude": 20.2961,
+              "longitude": 85.8245,
+              "lastUpdated": "2025-09-04T09:42:54.500Z"
+            }
+          },
+          "pagination": {
+            "currentPage": 1,
+            "totalPages": 0,
+            "totalItems": 0,
+            "hasNext": false,
+            "hasPrev": false,
+            "itemsPerPage": 10
+          }
+        }
+      },
+      "hasOrders": true,
+      "ordersCount": 0,
+      "hasSummary": true,
+      "hasFilters": true,
+      "hasPagination": true
+    },
+    {
+      "testCase": "Normal orders only",
+      "success": true,
+      "status": 200,
+      "data": {
+        "success": true,
+        "message": "Found 1 available orders within 15km radius",
+        "data": {
+          "orders": [
+            {
+              "_id": "689dad9e1b6ebfe50374e4ba",
+              "orderId": "AGK17551640624699WI",
+              "customer": {
+                "name": "Subhankar Dash",
+                "phoneNumber": "7681879862",
+                "address": "6 Nandankanan Road, Patia"
+              },
+              "supplier": {
+                "companyName": "subankar trader",
+                "contactNumber": "7681879863",
+                "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+              },
+              "deliveryLocation": {
+                "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                "drop": "6 Nandankanan Road, Patia",
+                "coordinates": {
+                  "latitude": 20.338594,
+                  "longitude": 85.822235
+                }
+              },
+              "orderDetails": {
+                "totalAmount": 984,
+                "transportCost": 25690.751900433843,
+                "itemsCount": 1,
+                "estimatedEarning": 17983.526330303688,
+                "orderTime": "2025-08-14T09:34:22.489Z",
+                "status": "confirmed"
+              },
+              "distance": 4.73,
+              "priority": "normal",
+              "notes": "",
+              "estimatedDeliveryTime": "2-3 business days"
+            }
+          ],
+          "summary": {
+            "totalAvailableOrders": 1,
+            "ordersInCurrentPage": 1,
+            "totalPotentialEarnings": 17983.53,
+            "averageDistance": 4.73
+          },
+          "filters": {
+            "radius": 15,
+            "orderType": "normal",
+            "pilotLocation": {
+              "latitude": 20.2961,
+              "longitude": 85.8245,
+              "lastUpdated": "2025-09-04T09:42:54.500Z"
+            }
+          },
+          "pagination": {
+            "currentPage": 1,
+            "totalPages": 1,
+            "totalItems": 1,
+            "hasNext": false,
+            "hasPrev": false,
+            "itemsPerPage": 10
+          }
+        }
+      },
+      "hasOrders": true,
+      "ordersCount": 1,
+      "hasSummary": true,
+      "hasFilters": true,
+      "hasPagination": true
+    }
+  ],
+  "scanOrder": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "error": {
+        "statusCode": 404,
+        "isOperational": true
+      },
+      "message": "Order not found or not ready for pickup",
+      "stack": "Error: Order not found or not ready for pickup\n    at C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\routes\\pilot.js:222:19\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+    }
+  },
+  "acceptOrder": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "msg": "Pilot ID is required",
+          "path": "pilotId",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "assignedOrders": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/assigned-orders not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "deliveryHistory": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "deliveries": [
+          {
+            "orderId": "AGK1755273478411UWC",
+            "customer": {
+              "_id": "689209c693ad74cc3ed85507",
+              "name": "Subhankar Dash",
+              "phoneNumber": "7681879862"
+            },
+            "supplier": {
+              "_id": "6883d69df2e9353f0a533ed9",
+              "companyName": "subankar trader"
+            },
+            "deliveryAddress": {
+              "coordinates": {},
+              "address": "Suchitra X Rd, Ramraju Nagar, Jeedimetla, Hyderabad, Secunderabad, Telangana 500067, India",
+              "city": "Hyderabad",
+              "state": "Telangana",
+              "pincode": "500067"
+            },
+            "totalAmount": 148,
+            "status": "delivered",
+            "deliveredAt": "2025-09-01T19:38:31.034Z",
+            "orderDate": "2025-08-15T15:57:58.432Z",
+            "deliveryNotes": "Package delivered successfully to customer"
+          }
+        ],
+        "pagination": {
+          "currentPage": 1,
+          "totalPages": 1,
+          "totalItems": 1,
+          "hasNext": false,
+          "hasPrev": false
+        }
+      }
+    }
+  },
+  "notifications": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/notifications not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "support": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/support not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  }
+}

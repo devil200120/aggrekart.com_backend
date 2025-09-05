@@ -314,9 +314,9 @@ An API request is like asking a question to a server and getting an answer back.
 
 #### Request Body:
 ```json
-{
-  "phoneNumber": "{{phone_number}}"
-}
+  {
+    "phoneNumber": "{{phone_number}}"
+  }
 ```
 
 #### What Happens:
@@ -351,7 +351,7 @@ An API request is like asking a question to a server and getting an answer back.
 
 #### Step-by-Step Instructions:
 1. **Click** on "Verify OTP & Login" request
-2. **Verify URL**: `{{base_url}}/login`
+2. **Verify URL**: `  n`
 3. **Method**: `POST`
 4. **Body → Raw → JSON**:
 

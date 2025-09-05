@@ -30,23 +30,34 @@ const normalizeSubcategory = (subcategory, category) => {
   }
   
   if (category === 'bricks_blocks') {
-    // Convert "Fly Ash Bricks" -> "fly_ash_bricks"
     return subcategory.toLowerCase().replace(/\s+/g, '_');
   }
   
   if (category === 'cement') {
-    // Convert cement subcategories
     const lowerSub = subcategory.toLowerCase();
+    
+    // Handle "OPC Cement" -> default to opc_53
+    if (lowerSub === 'opc cement' || lowerSub === 'opc') return 'opc_53';
+    
+    // Handle specific grades
     if (lowerSub.includes('opc') && lowerSub.includes('53')) return 'opc_53';
     if (lowerSub.includes('opc') && lowerSub.includes('43')) return 'opc_43';
-    if (lowerSub.includes('opc') && !lowerSub.includes('53') && !lowerSub.includes('43')) return 'opc_53';
+    if (lowerSub.includes('opc') && lowerSub.includes('33')) return 'opc_33';
+    
+    // Handle PPC variations
     if (lowerSub.includes('ppc')) return 'ppc';
+    if (lowerSub.includes('portland pozzolana')) return 'ppc';
+    
+    // Handle white cement
     if (lowerSub.includes('white')) return 'white_cement';
-    return 'opc_53';
+    
+    // Default OPC to 53 grade if no specific grade mentioned
+    if (lowerSub.includes('opc')) return 'opc_53';
+    
+    return 'opc_53'; // Default fallback for cement
   }
   
   if (category === 'sand') {
-    // Convert sand subcategories
     const lowerSub = subcategory.toLowerCase();
     if (lowerSub.includes('plastering')) return 'river_sand_plastering';
     if (lowerSub.includes('river')) return 'river_sand';
@@ -55,7 +66,6 @@ const normalizeSubcategory = (subcategory, category) => {
   
   return subcategory;
 };
-
 async function updateCoordinatesIfAddressChanged(supplier, reqBody) {
   // Check if any address field is being updated
   const addressFields = ['companyAddress', 'city', 'state', 'pincode'];
@@ -90,7 +100,10 @@ router.post('/register-new', [
   // User validation
   body('email').isEmail().withMessage('Please provide a valid email'),
   body('phoneNumber').matches(/^[6-9]\d{9}$/).withMessage('Please provide a valid phone number'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password')
+  .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+  .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/)
+  .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
   body('contactPersonName').trim().isLength({ min: 2 }).withMessage('Contact person name is required'),
   
   // Supplier validation

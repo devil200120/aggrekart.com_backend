@@ -216,7 +216,7 @@ router.post('/scan-order', pilotAuth, [
 
     const order = await Order.findOne(query)
     .populate('customer', 'name phoneNumber addresses')
-    .populate('supplier', 'companyName contactPersonNumber address');
+    .populate('supplier', 'companyName contactPersonNumber companyAddress dispatchLocation city state pincode');
 
     if (!order) {
       return next(new ErrorHandler('Order not found or not ready for pickup', 404));
@@ -242,12 +242,27 @@ router.post('/scan-order', pilotAuth, [
           customer: {
             name: order.customer.name,
             phoneNumber: order.customer.phoneNumber,
-            address: order.deliveryAddress || order.customer.addresses?.[0]
+            // ✅ FIXED: Get address from deliveryAddress first, then fallback to customer addresses
+            address: order.deliveryAddress?.address || 
+                    order.customer.addresses?.[0]?.address || 
+                    'Address not available'
           },
           supplier: {
             companyName: order.supplier.companyName,
             contactNumber: order.supplier.contactPersonNumber,
-            address: order.supplier.address
+            // ✅ FIXED: Use companyAddress or dispatchLocation.address for supplier address
+            address: order.supplier.companyAddress || 
+                    order.supplier.dispatchLocation?.address || 
+                    'Supplier address not available'
+          },
+          // ✅ FIXED: Include delivery address separately for pickup/drop info
+          deliveryAddress: {
+            pickup: order.supplier?.companyAddress || 
+                   order.supplier?.dispatchLocation?.address || 
+                   'Supplier address not available',
+            drop: order.deliveryAddress?.address || 
+                  order.customer.addresses?.[0]?.address || 
+                  'Delivery address not available'
           },
           items: order.items.map(item => ({
             name: item.productSnapshot?.name || item.product.name,
@@ -256,7 +271,7 @@ router.post('/scan-order', pilotAuth, [
             totalPrice: item.totalPrice
           })),
           pricing: order.pricing,
-          totalAmount: order.pricing.totalAmount,
+          totalAmount: order.pricing?.totalAmount || 0, // ✅ FIXED: Ensure totalAmount is always a number
           estimatedDeliveryTime: order.delivery?.estimatedTime || '2-4 hours',
           specialInstructions: order.notes,
           status: order.status
@@ -879,6 +894,11 @@ router.get('/delivery-history', pilotAuth, [
     next(error);
   }
 });
+
+// @route   GET /api/pilot/available-nearby-orders
+// @desc    Get available orders nearby that are not assigned to any pilot yet
+// @access  Private (Pilot)
+
 // ADD these missing endpoints:
 
 // @route   GET /api/pilot/dashboard/stats

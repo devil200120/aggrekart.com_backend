@@ -1,0 +1,1153 @@
+{
+  "timestamp": "2025-09-04T13:31:32.371Z",
+  "environment": "production",
+  "baseUrl": "https://aggrekart-com-backend.onrender.com",
+  "endpoint": "/api/pilot/available-nearby-orders",
+  "testResults": [
+    {
+      "step": "Pilot Login",
+      "status": "PASSED",
+      "result": {
+        "success": true,
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "isAvailable": false,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          }
+        },
+        "tokenPreview": "eyJhbGciOiJIUzI1NiIs..."
+      }
+    },
+    {
+      "step": "Update Location",
+      "status": "PASSED",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "location": {
+          "latitude": 20.2961,
+          "longitude": 85.8245
+        }
+      }
+    },
+    {
+      "step": "Available Nearby Orders API Tests",
+      "status": "PASSED",
+      "result": [
+        {
+          "testCase": "Default parameters (15km radius, 10 orders per page)",
+          "parameters": {},
+          "expectedFeatures": [
+            "pagination",
+            "summary",
+            "filters"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 2 available orders within 15km radius",
+          "timestamp": "2025-09-04T13:31:37.026Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 2,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 15,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 2,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 10
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "high"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 2 available orders within 15km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689e24d2ee6b31be0f10a1d3",
+                  "orderId": "AGK17551945784118TC",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 246,
+                    "transportCost": 236.79059592250917,
+                    "itemsCount": 1,
+                    "estimatedEarning": 165.7534171457564,
+                    "orderTime": "2025-08-14T18:02:58.433Z",
+                    "status": "processing"
+                  },
+                  "distance": 4.73,
+                  "priority": "high",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                },
+                {
+                  "_id": "689dad9e1b6ebfe50374e4ba",
+                  "orderId": "AGK17551640624699WI",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 984,
+                    "transportCost": 25690.751900433843,
+                    "itemsCount": 1,
+                    "estimatedEarning": 17983.526330303688,
+                    "orderTime": "2025-08-14T09:34:22.489Z",
+                    "status": "confirmed"
+                  },
+                  "distance": 4.73,
+                  "priority": "normal",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 2,
+                "ordersInCurrentPage": 2,
+                "totalPotentialEarnings": 18149.28,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 15,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 2,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 10
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Small radius - 3km only",
+          "parameters": {
+            "radius": 3
+          },
+          "expectedFeatures": [
+            "orders within 3km"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 0 available orders within 3km radius",
+          "timestamp": "2025-09-04T13:31:40.039Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 0,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 3,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 0,
+              "totalItems": 0,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 10
+            }
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 0 available orders within 3km radius",
+            "data": {
+              "orders": [],
+              "summary": {
+                "totalAvailableOrders": 0,
+                "ordersInCurrentPage": 0,
+                "totalPotentialEarnings": 0,
+                "averageDistance": 0
+              },
+              "filters": {
+                "radius": 3,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 0,
+                "totalItems": 0,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 10
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Medium radius - 10km with small page size",
+          "parameters": {
+            "radius": 10,
+            "page": 1,
+            "limit": 3
+          },
+          "expectedFeatures": [
+            "pagination with 3 items",
+            "page 1"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 2 available orders within 10km radius",
+          "timestamp": "2025-09-04T13:31:43.031Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 2,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 10,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 2,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 3
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "high"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 2 available orders within 10km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689e24d2ee6b31be0f10a1d3",
+                  "orderId": "AGK17551945784118TC",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 246,
+                    "transportCost": 236.79059592250917,
+                    "itemsCount": 1,
+                    "estimatedEarning": 165.7534171457564,
+                    "orderTime": "2025-08-14T18:02:58.433Z",
+                    "status": "processing"
+                  },
+                  "distance": 4.73,
+                  "priority": "high",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                },
+                {
+                  "_id": "689dad9e1b6ebfe50374e4ba",
+                  "orderId": "AGK17551640624699WI",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 984,
+                    "transportCost": 25690.751900433843,
+                    "itemsCount": 1,
+                    "estimatedEarning": 17983.526330303688,
+                    "orderTime": "2025-08-14T09:34:22.489Z",
+                    "status": "confirmed"
+                  },
+                  "distance": 4.73,
+                  "priority": "normal",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 2,
+                "ordersInCurrentPage": 2,
+                "totalPotentialEarnings": 18149.28,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 10,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 2,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 3
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Large radius - 25km coverage",
+          "parameters": {
+            "radius": 25,
+            "page": 1,
+            "limit": 10
+          },
+          "expectedFeatures": [
+            "wider coverage",
+            "more potential orders"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 2 available orders within 25km radius",
+          "timestamp": "2025-09-04T13:31:46.038Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 2,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 25,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 2,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 10
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "high"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 2 available orders within 25km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689e24d2ee6b31be0f10a1d3",
+                  "orderId": "AGK17551945784118TC",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 246,
+                    "transportCost": 236.79059592250917,
+                    "itemsCount": 1,
+                    "estimatedEarning": 165.7534171457564,
+                    "orderTime": "2025-08-14T18:02:58.433Z",
+                    "status": "processing"
+                  },
+                  "distance": 4.73,
+                  "priority": "high",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                },
+                {
+                  "_id": "689dad9e1b6ebfe50374e4ba",
+                  "orderId": "AGK17551640624699WI",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 984,
+                    "transportCost": 25690.751900433843,
+                    "itemsCount": 1,
+                    "estimatedEarning": 17983.526330303688,
+                    "orderTime": "2025-08-14T09:34:22.489Z",
+                    "status": "confirmed"
+                  },
+                  "distance": 4.73,
+                  "priority": "normal",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 2,
+                "ordersInCurrentPage": 2,
+                "totalPotentialEarnings": 18149.28,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 25,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 2,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 10
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Filter by urgent orders only",
+          "parameters": {
+            "radius": 15,
+            "orderType": "urgent"
+          },
+          "expectedFeatures": [
+            "urgent orders filter",
+            "priority filtering"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 0 available orders within 15km radius",
+          "timestamp": "2025-09-04T13:31:49.034Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 0,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 15,
+              "orderType": "urgent",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 0,
+              "totalItems": 0,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 10
+            }
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 0 available orders within 15km radius",
+            "data": {
+              "orders": [],
+              "summary": {
+                "totalAvailableOrders": 0,
+                "ordersInCurrentPage": 0,
+                "totalPotentialEarnings": 0,
+                "averageDistance": 0
+              },
+              "filters": {
+                "radius": 15,
+                "orderType": "urgent",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 0,
+                "totalItems": 0,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 10
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Filter by normal orders only",
+          "parameters": {
+            "radius": 15,
+            "orderType": "normal"
+          },
+          "expectedFeatures": [
+            "normal orders filter",
+            "standard priority"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 1 available orders within 15km radius",
+          "timestamp": "2025-09-04T13:31:52.020Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 1,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 15,
+              "orderType": "normal",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 1,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 10
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "normal"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 1 available orders within 15km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689dad9e1b6ebfe50374e4ba",
+                  "orderId": "AGK17551640624699WI",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 984,
+                    "transportCost": 25690.751900433843,
+                    "itemsCount": 1,
+                    "estimatedEarning": 17983.526330303688,
+                    "orderTime": "2025-08-14T09:34:22.489Z",
+                    "status": "confirmed"
+                  },
+                  "distance": 4.73,
+                  "priority": "normal",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 1,
+                "ordersInCurrentPage": 1,
+                "totalPotentialEarnings": 17983.53,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 15,
+                "orderType": "normal",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 1,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 10
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Test pagination - page 2",
+          "parameters": {
+            "radius": 20,
+            "page": 2,
+            "limit": 5
+          },
+          "expectedFeatures": [
+            "page 2 results",
+            "pagination info"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 0 available orders within 20km radius",
+          "timestamp": "2025-09-04T13:31:55.040Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 0,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 20,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 2,
+              "totalPages": 0,
+              "totalItems": 0,
+              "hasNext": false,
+              "hasPrev": true,
+              "itemsPerPage": 5
+            }
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 0 available orders within 20km radius",
+            "data": {
+              "orders": [],
+              "summary": {
+                "totalAvailableOrders": 0,
+                "ordersInCurrentPage": 0,
+                "totalPotentialEarnings": 0,
+                "averageDistance": 0
+              },
+              "filters": {
+                "radius": 20,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 2,
+                "totalPages": 0,
+                "totalItems": 0,
+                "hasNext": false,
+                "hasPrev": true,
+                "itemsPerPage": 5
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Very small page size",
+          "parameters": {
+            "radius": 15,
+            "page": 1,
+            "limit": 1
+          },
+          "expectedFeatures": [
+            "single order per page",
+            "pagination"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 1 available orders within 15km radius",
+          "timestamp": "2025-09-04T13:31:58.030Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 1,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 15,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 1,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 1
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "high"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 1 available orders within 15km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689e24d2ee6b31be0f10a1d3",
+                  "orderId": "AGK17551945784118TC",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 246,
+                    "transportCost": 236.79059592250917,
+                    "itemsCount": 1,
+                    "estimatedEarning": 165.7534171457564,
+                    "orderTime": "2025-08-14T18:02:58.433Z",
+                    "status": "processing"
+                  },
+                  "distance": 4.73,
+                  "priority": "high",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 1,
+                "ordersInCurrentPage": 1,
+                "totalPotentialEarnings": 165.75,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 15,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 1,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 1
+              }
+            }
+          }
+        },
+        {
+          "testCase": "Large page size",
+          "parameters": {
+            "radius": 30,
+            "page": 1,
+            "limit": 20
+          },
+          "expectedFeatures": [
+            "large result set",
+            "comprehensive coverage"
+          ],
+          "statusCode": 200,
+          "success": true,
+          "message": "Found 2 available orders within 30km radius",
+          "timestamp": "2025-09-04T13:32:01.021Z",
+          "responseAnalysis": {
+            "hasOrders": true,
+            "ordersCount": 2,
+            "hasSummary": true,
+            "hasFilters": true,
+            "hasPagination": true,
+            "summaryFields": [
+              "totalAvailableOrders",
+              "ordersInCurrentPage",
+              "totalPotentialEarnings",
+              "averageDistance"
+            ],
+            "filtersApplied": {
+              "radius": 30,
+              "orderType": "all",
+              "pilotLocation": {
+                "latitude": 20.2961,
+                "longitude": 85.8245,
+                "lastUpdated": "2025-09-04T13:31:33.214Z"
+              }
+            },
+            "paginationInfo": {
+              "currentPage": 1,
+              "totalPages": 1,
+              "totalItems": 2,
+              "hasNext": false,
+              "hasPrev": false,
+              "itemsPerPage": 20
+            }
+          },
+          "sampleOrderAnalysis": {
+            "hasOrderId": true,
+            "hasCustomer": true,
+            "hasSupplier": true,
+            "hasDeliveryLocation": true,
+            "hasOrderDetails": true,
+            "hasDistance": true,
+            "hasPriority": true,
+            "hasEstimatedTime": true,
+            "hasAmount": false,
+            "distance": 4.73,
+            "priority": "high"
+          },
+          "fullResponse": {
+            "success": true,
+            "message": "Found 2 available orders within 30km radius",
+            "data": {
+              "orders": [
+                {
+                  "_id": "689e24d2ee6b31be0f10a1d3",
+                  "orderId": "AGK17551945784118TC",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 246,
+                    "transportCost": 236.79059592250917,
+                    "itemsCount": 1,
+                    "estimatedEarning": 165.7534171457564,
+                    "orderTime": "2025-08-14T18:02:58.433Z",
+                    "status": "processing"
+                  },
+                  "distance": 4.73,
+                  "priority": "high",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                },
+                {
+                  "_id": "689dad9e1b6ebfe50374e4ba",
+                  "orderId": "AGK17551640624699WI",
+                  "customer": {
+                    "name": "Subhankar Dash",
+                    "phoneNumber": "7681879862",
+                    "address": "6 Nandankanan Road, Patia"
+                  },
+                  "supplier": {
+                    "companyName": "subankar trader",
+                    "contactNumber": "7681879863",
+                    "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+                  },
+                  "deliveryLocation": {
+                    "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+                    "drop": "6 Nandankanan Road, Patia",
+                    "coordinates": {
+                      "latitude": 20.338594,
+                      "longitude": 85.822235
+                    }
+                  },
+                  "orderDetails": {
+                    "totalAmount": 984,
+                    "transportCost": 25690.751900433843,
+                    "itemsCount": 1,
+                    "estimatedEarning": 17983.526330303688,
+                    "orderTime": "2025-08-14T09:34:22.489Z",
+                    "status": "confirmed"
+                  },
+                  "distance": 4.73,
+                  "priority": "normal",
+                  "notes": "",
+                  "estimatedDeliveryTime": "2-3 business days"
+                }
+              ],
+              "summary": {
+                "totalAvailableOrders": 2,
+                "ordersInCurrentPage": 2,
+                "totalPotentialEarnings": 18149.28,
+                "averageDistance": 4.73
+              },
+              "filters": {
+                "radius": 30,
+                "orderType": "all",
+                "pilotLocation": {
+                  "latitude": 20.2961,
+                  "longitude": 85.8245,
+                  "lastUpdated": "2025-09-04T13:31:33.214Z"
+                }
+              },
+              "pagination": {
+                "currentPage": 1,
+                "totalPages": 1,
+                "totalItems": 2,
+                "hasNext": false,
+                "hasPrev": false,
+                "itemsPerPage": 20
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

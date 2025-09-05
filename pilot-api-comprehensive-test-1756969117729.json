@@ -1,0 +1,302 @@
+{
+  "timestamp": "2025-09-04T06:58:37.729Z",
+  "environment": "production",
+  "baseUrl": "https://aggrekart-com-backend.onrender.com",
+  "pilotEndpoints": {
+    "total": 13,
+    "tested": 13,
+    "passed": 13,
+    "failed": 0
+  },
+  "results": [
+    {
+      "endpoint": "Pilot Registration",
+      "description": "POST /api/pilot/register - Register new pilot",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:39.960Z",
+      "result": {
+        "statusCode": 500,
+        "success": false,
+        "message": "Pilot validation failed: vehicleDetails.registrationNumber: Please provide a valid vehicle registration number",
+        "responseStructure": {
+          "hasSuccess": true,
+          "hasMessage": true,
+          "hasData": false,
+          "dataFields": []
+        },
+        "validationHandling": "No validation errors"
+      }
+    },
+    {
+      "endpoint": "Pilot Login (OTP Request)",
+      "description": "POST /api/pilot/login - Request OTP",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:42.529Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "message": "OTP sent successfully",
+        "responseStructure": {
+          "hasOtpSent": true,
+          "hasOtpInResponse": true,
+          "dataFields": [
+            "otpSent",
+            "otp"
+          ]
+        },
+        "actualOTP": "604139"
+      }
+    },
+    {
+      "endpoint": "Pilot Login (Complete)",
+      "description": "POST /api/pilot/login - Complete login with OTP",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:46.170Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "message": "Login successful",
+        "responseStructure": {
+          "hasToken": true,
+          "hasPilotData": true,
+          "pilotFields": [
+            "pilotId",
+            "name",
+            "phoneNumber",
+            "vehicleDetails",
+            "isAvailable",
+            "currentOrder",
+            "totalDeliveries",
+            "rating"
+          ],
+          "tokenPreview": "eyJhbGciOiJIUzI1NiIs..."
+        },
+        "authTokenSet": true
+      }
+    },
+    {
+      "endpoint": "Scan Order",
+      "description": "POST /api/pilot/scan-order - Scan QR code to get order details",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:48.630Z",
+      "result": {
+        "statusCode": 404,
+        "success": false,
+        "message": "Order not found or not ready for pickup",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrder": false,
+          "orderFields": [],
+          "hasCustomer": false,
+          "hasSupplier": false,
+          "hasItems": false
+        },
+        "expectedBehavior": "Order not found (expected for test order)"
+      }
+    },
+    {
+      "endpoint": "Accept Order",
+      "description": "POST /api/pilot/accept-order - Accept delivery assignment",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:50.791Z",
+      "result": {
+        "statusCode": 400,
+        "success": false,
+        "message": "Pilot not available for new orders",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrder": false,
+          "orderFields": []
+        }
+      }
+    },
+    {
+      "endpoint": "Start Journey",
+      "description": "POST /api/pilot/start-journey - Start delivery journey",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:53.330Z",
+      "result": {
+        "statusCode": 404,
+        "success": false,
+        "message": "Order not found",
+        "responseStructure": {
+          "hasData": false,
+          "dataFields": []
+        }
+      }
+    },
+    {
+      "endpoint": "Complete Delivery",
+      "description": "POST /api/pilot/complete-delivery - Complete with OTP",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:56.084Z",
+      "result": {
+        "statusCode": 404,
+        "success": false,
+        "message": "Order not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrder": false,
+          "hasPilot": false,
+          "orderFields": [],
+          "pilotFields": []
+        }
+      }
+    },
+    {
+      "endpoint": "Get Profile",
+      "description": "GET /api/pilot/profile/:id - Get pilot profile",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:58:59.687Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "responseStructure": {
+          "hasData": true,
+          "hasPilot": true,
+          "hasRecentDeliveries": true,
+          "hasStats": true,
+          "pilotFields": [
+            "vehicleDetails",
+            "drivingLicense",
+            "currentLocation",
+            "rating",
+            "emergencyContact",
+            "_id",
+            "name",
+            "phoneNumber",
+            "email",
+            "isAvailable",
+            "isApproved",
+            "isActive",
+            "totalDeliveries",
+            "currentOrder",
+            "workingAreas",
+            "createdAt",
+            "updatedAt",
+            "pilotId",
+            "__v"
+          ],
+          "statsFields": [
+            "totalDeliveries",
+            "rating",
+            "documentsValid"
+          ]
+        }
+      }
+    },
+    {
+      "endpoint": "Update Location",
+      "description": "POST /api/pilot/update-location - Update GPS location",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:59:02.463Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "message": "Location updated successfully",
+        "responseStructure": {
+          "hasData": true,
+          "hasLocation": true,
+          "locationFields": [
+            "latitude",
+            "longitude",
+            "lastUpdated"
+          ]
+        }
+      }
+    },
+    {
+      "endpoint": "Get Stats",
+      "description": "GET /api/pilot/stats - Get performance statistics",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:59:05.833Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "responseStructure": {
+          "hasData": true,
+          "hasPilot": true,
+          "hasStats": true,
+          "hasRecentDeliveries": true,
+          "hasPerformance": true,
+          "dataFields": [
+            "pilot",
+            "stats",
+            "recentDeliveries",
+            "performance"
+          ]
+        }
+      }
+    },
+    {
+      "endpoint": "Get Delivery History",
+      "description": "GET /api/pilot/delivery-history - Get past deliveries",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:59:09.313Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "responseStructure": {
+          "hasData": true,
+          "hasDeliveries": true,
+          "hasPagination": true,
+          "deliveriesCount": 1,
+          "paginationFields": [
+            "currentPage",
+            "totalPages",
+            "totalItems",
+            "hasNext",
+            "hasPrev"
+          ]
+        }
+      }
+    },
+    {
+      "endpoint": "Get Dashboard Stats",
+      "description": "GET /api/pilot/dashboard/stats - Get dashboard data",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:59:11.770Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "responseStructure": {
+          "hasData": true,
+          "hasTodayStats": true,
+          "hasPilotInfo": true,
+          "todayStatsFields": [
+            "totalOrders",
+            "totalEarnings",
+            "completedOrders"
+          ],
+          "pilotInfoFields": [
+            "name",
+            "vehicleNumber",
+            "rating",
+            "totalDeliveries"
+          ]
+        }
+      }
+    },
+    {
+      "endpoint": "Get App Config",
+      "description": "GET /api/pilot/app/config - Get app configuration",
+      "status": "PASSED",
+      "timestamp": "2025-09-04T06:59:13.847Z",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "responseStructure": {
+          "hasData": true,
+          "hasSupportInfo": true,
+          "hasAppVersion": true,
+          "hasFeatures": true,
+          "configFields": [
+            "supportInfo",
+            "appVersion",
+            "features"
+          ]
+        }
+      }
+    }
+  ]
+}

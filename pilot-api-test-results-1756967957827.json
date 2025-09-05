@@ -1,0 +1,464 @@
+{
+  "health": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot../health not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin"
+      ]
+    }
+  },
+  "appConfig": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "supportInfo": {
+          "phone": "+91-9876543210",
+          "email": "support@aggrekart.com",
+          "whatsapp": "+91-9876543210"
+        },
+        "appVersion": {
+          "current": "1.0.0",
+          "minimum": "1.0.0"
+        },
+        "features": {
+          "liveTracking": true,
+          "otpDelivery": true,
+          "cashCollection": true
+        }
+      }
+    }
+  },
+  "register": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "value": "motorcycle",
+          "msg": "Invalid vehicle type",
+          "path": "vehicleDetails.vehicleType",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "requestOTP": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "OTP sent successfully",
+      "data": {
+        "otpSent": true,
+        "otp": "544050"
+      }
+    }
+  },
+  "login": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "Login successful",
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "isAvailable": false,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          }
+        },
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaWxvdElkIjoiNjhiNWU4OTUxODcyYmZmNTU0OGYxYWI5IiwiaWF0IjoxNzU2OTY3OTU1LCJleHAiOjE3NTk1NTk5NTV9.jj4EThCf3_lAAK99VoQPgTx4PIKsnhXg6vpS4CtO1FE"
+      }
+    }
+  },
+  "profile": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "pilot": {
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "drivingLicense": {
+            "number": "DL123456789",
+            "validTill": "2026-09-01T18:40:21.344Z",
+            "isValid": false
+          },
+          "currentLocation": {
+            "type": "Point",
+            "coordinates": [
+              77.5946,
+              12.9716
+            ],
+            "lastUpdated": "2025-09-03T14:36:57.475Z"
+          },
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "emergencyContact": {
+            "name": "Emergency Contact",
+            "phoneNumber": "9876543211"
+          },
+          "_id": "68b5e8951872bff5548f1ab9",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "email": "testpilot@test.com",
+          "isAvailable": false,
+          "isApproved": true,
+          "isActive": true,
+          "totalDeliveries": 1,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "workingAreas": [],
+          "createdAt": "2025-09-01T18:40:21.539Z",
+          "updatedAt": "2025-09-04T06:39:15.833Z",
+          "pilotId": "PIL000001",
+          "__v": 0
+        },
+        "recentDeliveries": [
+          {
+            "pricing": {
+              "totalAmount": 148
+            },
+            "deliveryAddress": {
+              "address": "Suchitra X Rd, Ramraju Nagar, Jeedimetla, Hyderabad, Secunderabad, Telangana 500067, India",
+              "city": "Hyderabad",
+              "state": "Telangana",
+              "pincode": "500067"
+            },
+            "delivery": {
+              "actualDeliveryTime": "2025-09-01T19:38:31.034Z"
+            },
+            "_id": "689f5906a93dac5fd8b77078",
+            "orderId": "AGK1755273478411UWC"
+          }
+        ],
+        "stats": {
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "documentsValid": false
+        }
+      }
+    }
+  },
+  "availability": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/availability not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin"
+      ]
+    }
+  },
+  "stats": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "totalDeliveries": 1,
+          "isAvailable": false,
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "joinedDate": "2025-09-01T18:40:21.539Z"
+        },
+        "stats": {
+          "_id": null,
+          "totalDeliveries": 1,
+          "totalRevenue": 148,
+          "avgDeliveryTime": 148,
+          "lastMonth": 1,
+          "thisWeek": 1,
+          "monthlyEarnings": 1435818.950407789,
+          "monthlyDeliveries": 1
+        },
+        "recentDeliveries": [
+          {
+            "pricing": {
+              "totalAmount": 148
+            },
+            "delivery": {
+              "actualDeliveryTime": "2025-09-01T19:38:31.034Z"
+            },
+            "_id": "689f5906a93dac5fd8b77078",
+            "orderId": "AGK1755273478411UWC",
+            "customer": {
+              "_id": "689209c693ad74cc3ed85507",
+              "name": "Subhankar Dash"
+            }
+          }
+        ],
+        "performance": {
+          "averageRating": 5,
+          "totalRatings": 1,
+          "onTimeDeliveryRate": 95,
+          "customerSatisfactionRate": 98
+        }
+      }
+    }
+  },
+  "dashboard": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "todayStats": {
+          "totalOrders": 0,
+          "totalEarnings": 0,
+          "completedOrders": 0
+        },
+        "pilotInfo": {
+          "name": "Test Pilot",
+          "vehicleNumber": "KA01AB1234",
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "totalDeliveries": 1
+        }
+      }
+    }
+  },
+  "scanOrder": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "error": {
+        "statusCode": 404,
+        "isOperational": true
+      },
+      "message": "Order not found or not ready for pickup",
+      "stack": "Error: Order not found or not ready for pickup\n    at C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\routes\\pilot.js:222:19\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+    }
+  },
+  "acceptOrder": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "msg": "Pilot ID is required",
+          "path": "pilotId",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "updateStatus": {
+    "success": false,
+    "status": 500,
+    "error": "Request failed with status code 500",
+    "data": {
+      "success": false,
+      "error": {
+        "stringValue": "\"AGK1755273478411UWC\"",
+        "valueType": "string",
+        "kind": "ObjectId",
+        "value": "AGK1755273478411UWC",
+        "path": "_id",
+        "reason": {},
+        "name": "CastError",
+        "message": "Cast to ObjectId failed for value \"AGK1755273478411UWC\" (type string) at path \"_id\" for model \"Order\""
+      },
+      "message": "Cast to ObjectId failed for value \"AGK1755273478411UWC\" (type string) at path \"_id\" for model \"Order\"",
+      "stack": "CastError: Cast to ObjectId failed for value \"AGK1755273478411UWC\" (type string) at path \"_id\" for model \"Order\"\n    at ObjectId.cast (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\schema\\objectid.js:250:11)\n    at SchemaType.applySetters (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\schematype.js:1219:12)\n    at SchemaType.castForQuery (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\schematype.js:1633:15)\n    at cast (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\cast.js:389:32)\n    at cast (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\cast.js:75:20)\n    at Query.cast (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\query.js:4927:12)\n    at Query._castConditions (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\query.js:2237:10)\n    at model.Query._findOne (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\query.js:2533:8)\n    at model.Query.exec (C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\node_modules\\mongoose\\lib\\query.js:4447:28)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\routes\\pilot.js:1111:19"
+    }
+  },
+  "completeDelivery": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "error": {
+        "statusCode": 404,
+        "isOperational": true
+      },
+      "message": "Order not found",
+      "stack": "Error: Order not found\n    at C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\routes\\pilot.js:506:19\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+    }
+  },
+  "assignedOrders": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "assignedOrders": [
+          {
+            "orderId": "AGK1756349965508KF3",
+            "customer": {
+              "name": "Subhankar Dash",
+              "phoneNumber": "7681879862",
+              "address": "Hig:64, Chandrasekharpur"
+            },
+            "supplier": {
+              "companyName": "subankar trader",
+              "contactNumber": "7681879863",
+              "address": "Saheed Nagar, Bhubaneswar, Odisha, India"
+            },
+            "deliveryAddress": {
+              "pickup": "Saheed Nagar, Bhubaneswar, Odisha, India",
+              "drop": "Hig:64, Chandrasekharpur"
+            },
+            "orderValue": 491.51,
+            "itemsCount": 1,
+            "status": "dispatched",
+            "assignedAt": "2025-09-01T19:51:31.866Z",
+            "deliveryOTP": "991736",
+            "estimatedDeliveryTime": "2-3 business days",
+            "timeline": [
+              {
+                "status": "pending",
+                "timestamp": "2025-08-28T02:59:25.510Z",
+                "note": "Order placed - COD",
+                "updatedBy": "689209c693ad74cc3ed85507",
+                "_id": "68afc60dabe87f29d612449d"
+              },
+              {
+                "status": "preparing",
+                "timestamp": "2025-08-28T03:01:05.455Z",
+                "note": "Status updated to preparing",
+                "updatedBy": "6883d69cf2e9353f0a533ed6",
+                "_id": "68afc671abe87f29d6124798"
+              },
+              {
+                "status": "material_loading",
+                "timestamp": "2025-08-28T03:01:14.494Z",
+                "note": "Status updated to material_loading",
+                "updatedBy": "6883d69cf2e9353f0a533ed6",
+                "_id": "68afc67aabe87f29d6124a36"
+              },
+              {
+                "status": "processing",
+                "timestamp": "2025-09-01T19:50:47.127Z",
+                "note": "Status updated to processing",
+                "updatedBy": "6883d69cf2e9353f0a533ed6",
+                "_id": "68b5f917582c912d9af2c473"
+              },
+              {
+                "status": "dispatched",
+                "timestamp": "2025-09-01T19:51:31.866Z",
+                "note": "Status updated to dispatched",
+                "updatedBy": "6883d69cf2e9353f0a533ed6",
+                "_id": "68b5f943582c912d9af2c724"
+              },
+              {
+                "status": "dispatched",
+                "timestamp": "2025-09-03T12:23:55.480Z",
+                "note": "Order assigned to pilot Test Pilot (KA01AB1234)",
+                "_id": "68b8335b357d4f4083e902c1"
+              },
+              {
+                "status": "dispatched",
+                "timestamp": "2025-09-03T12:23:56.591Z",
+                "note": "Driver started journey to delivery location",
+                "_id": "68b8335c357d4f4083e902d2"
+              },
+              {
+                "status": "dispatched",
+                "timestamp": "2025-09-03T13:16:51.216Z",
+                "note": "Driver started journey to delivery location",
+                "_id": "68b83fc32848918ea1a176c8"
+              },
+              {
+                "status": "dispatched",
+                "timestamp": "2025-09-03T13:19:23.583Z",
+                "note": "Driver started journey to delivery location",
+                "_id": "68b8405b5e47c34f4ab75174"
+              }
+            ]
+          }
+        ],
+        "totalAssigned": 1
+      }
+    }
+  },
+  "orderHistory": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/order-history not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin"
+      ]
+    }
+  }
+}

@@ -1,0 +1,482 @@
+{
+  "info": {
+    "name": "Aggrekart Pilot API - Complete Collection",
+    "description": "Complete API collection for Aggrekart Pilot mobile app with all endpoints and JSON request bodies",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://aggrekart-backend.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "local_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pilot_id", 
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "ORD001234567890",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Authentication",
+      "item": [
+        {
+          "name": "1. Register New Pilot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rajesh Kumar\",\n  \"phoneNumber\": \"9876543210\",\n  \"email\": \"rajesh.kumar@example.com\",\n  \"vehicleDetails\": {\n    \"registrationNumber\": \"MH12AB1234\",\n    \"vehicleType\": \"truck\",\n    \"capacity\": 10\n  },\n  \"drivingLicense\": {\n    \"number\": \"MH1234567890123\",\n    \"validTill\": \"2025-12-31T00:00:00.000Z\"\n  },\n  \"emergencyContact\": {\n    \"name\": \"Sunita Kumar\",\n    \"phoneNumber\": \"9876543211\",\n    \"relation\": \"spouse\"\n  },\n  \"workingAreas\": [\n    {\n      \"pincode\": \"400001\",\n      \"area\": \"Mumbai Central\"\n    },\n    {\n      \"pincode\": \"400002\", \n      \"area\": \"Fort\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "register"]
+            },
+            "description": "Register a new pilot with vehicle details and documents"
+          }
+        },
+        {
+          "name": "2. Request OTP for Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "login"]
+            },
+            "description": "Request OTP for pilot login. OTP will be sent via SMS."
+          }
+        },
+        {
+          "name": "3. Login with OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"9876543210\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "login"]
+            },
+            "description": "Complete login with OTP verification and get auth token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Auto-save auth token and pilot ID for subsequent requests",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.success && response.data.token) {",
+                  "        pm.environment.set('auth_token', response.data.token);",
+                  "        pm.environment.set('pilot_id', response.data.pilot.pilotId);",
+                  "        console.log('✅ Auth token saved:', response.data.token.substring(0, 20) + '...');",
+                  "        console.log('✅ Pilot ID saved:', response.data.pilot.pilotId);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📦 Order Management",
+      "item": [
+        {
+          "name": "4. Scan Order QR Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{order_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/scan-order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "scan-order"]
+            },
+            "description": "Scan order QR code to get detailed order information including pickup and delivery addresses"
+          }
+        },
+        {
+          "name": "5. Accept Order Assignment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{order_id}}\",\n  \"pilotId\": \"{{pilot_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/accept-order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "accept-order"]
+            },
+            "description": "Accept assigned order and update pilot availability status"
+          }
+        },
+        {
+          "name": "6. Start Journey to Delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{order_id}}\",\n  \"currentLocation\": {\n    \"latitude\": 19.0760,\n    \"longitude\": 72.8777\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/start-journey",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "start-journey"]
+            },
+            "description": "Start journey to delivery location and notify customer"
+          }
+        },
+        {
+          "name": "7. Complete Delivery with OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{order_id}}\",\n  \"deliveryOTP\": \"123456\",\n  \"deliveryNotes\": \"Delivered successfully at main gate\",\n  \"customerRating\": 5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/complete-delivery",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "complete-delivery"]
+            },
+            "description": "Complete delivery using customer OTP verification"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📍 Location & Tracking",
+      "item": [
+        {
+          "name": "8. Update Current Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 19.0850,\n  \"longitude\": 72.8810\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pilot/update-location",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "update-location"]
+            },
+            "description": "Update pilot's current GPS location for real-time tracking"
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Dashboard & Analytics",
+      "item": [
+        {
+          "name": "9. Get Dashboard Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pilot/dashboard/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "dashboard", "stats"]
+            },
+            "description": "Get pilot dashboard with today's statistics and earnings"
+          }
+        },
+        {
+          "name": "10. Get Push Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pilot/dashboard/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "dashboard", "notifications"]
+            },
+            "description": "Get list of notifications for new orders and updates"
+          }
+        },
+        {
+          "name": "11. Get Delivery History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pilot/delivery-history?page=1&limit=10&status=delivered",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "delivery-history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number for pagination"
+                },
+                {
+                  "key": "limit", 
+                  "value": "10",
+                  "description": "Number of records per page (max 50)"
+                },
+                {
+                  "key": "status",
+                  "value": "delivered",
+                  "description": "Filter by order status: delivered, cancelled"
+                }
+              ]
+            },
+            "description": "Get paginated delivery history with filters"
+          }
+        },
+        {
+          "name": "12. Get Pilot Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pilot/profile/{{pilot_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "profile", "{{pilot_id}}"]
+            },
+            "description": "Get complete pilot profile with performance statistics"
+          }
+        },
+        {
+          "name": "13. Get Performance Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pilot/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pilot", "stats"]
+            },
+            "description": "Get detailed performance analytics and earnings data"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🎫 Support & Help",
+      "item": [
+        {
+          "name": "14. Submit Support Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Payment Issue\",\n  \"message\": \"I haven't received payment for order ORD001234567890. Please check and resolve this issue urgently.\",\n  \"priority\": \"high\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/support/contact",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "contact"]
+            },
+            "description": "Submit support ticket for issues or queries"
+          }
+        },
+        {
+          "name": "15. Get FAQ Information",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/support/faqs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "support", "faqs"]
+            },
+            "description": "Get frequently asked questions for pilots"
+          }
+        },
+        {
+          "name": "16. Get App Configuration",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/app/config",
+              "host": ["{{base_url}}"],
+              "path": ["api", "app", "config"]
+            },
+            "description": "Get app configuration including support contacts and feature flags"
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Pre-request script to log API calls",
+          "console.log('🚀 Making request to:', pm.request.url.toString());",
+          "console.log('📱 Method:', pm.request.method);",
+          "",
+          "// Check if auth token exists for protected routes",
+          "const url = pm.request.url.toString();",
+          "const protectedRoutes = ['/scan-order', '/accept-order', '/start-journey', '/complete-delivery', '/update-location', '/dashboard', '/profile', '/stats', '/delivery-history', '/support/contact'];",
+          "",
+          "const isProtectedRoute = protectedRoutes.some(route => url.includes(route));",
+          "if (isProtectedRoute && !pm.environment.get('auth_token')) {",
+          "    console.warn('⚠️  WARNING: This is a protected route but no auth token found. Please login first.');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script for all requests",
+          "pm.test('Response status code should be 2xx', function () {",
+          "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 202, 204]);",
+          "});",
+          "",
+          "pm.test('Response should be JSON', function () {",
+          "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "});",
+          "",
+          "pm.test('Response should have success field', function () {",
+          "    const jsonData = pm.response.json();",
+          "    pm.expect(jsonData).to.have.property('success');",
+          "});",
+          "",
+          "// Log response for debugging",
+          "console.log('✅ Response Status:', pm.response.status);",
+          "console.log('📦 Response Size:', pm.response.responseSize + ' bytes');",
+          "console.log('⏱️  Response Time:', pm.response.responseTime + 'ms');"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+[
+  {
+    "customerId": "ADMIN00841",
+    "name": "Super Admin",
+    "email": "admin@aggrekart.com",
+    "phoneNumber": "9876543210",
+    "password": "$2a$10$vD4OO0g4JmwxY60DR2Q4Ce69pulIFNVuCJAdOD.UbcZ2VIGhxA44i",
+    "role": "admin",
+    "isActive": true,
+    "phoneVerified": true,
+    "emailVerified": true,
+    "membershipTier": "platinum",
+    "aggreCoins": 10000,
+    "addresses": [
+      {
+        "type": "work",
+        "address": "Aggrekart Head Office, Tech Park",
+        "city": "Bangalore",
+        "state": "Karnataka",
+        "pincode": "560001",
+        "coordinates": {
+          "latitude": 12.9716,
+          "longitude": 77.5946
+        },
+        "geocodingInfo": {
+          "source": "manual",
+          "method": "manual_refresh",
+          "formattedAddress": "Aggrekart Head Office, Tech Park, Bangalore, Karnataka 560001, India",
+          "geocodedAt": "2025-09-02T10:00:00.000Z",
+          "updatedAt": "2025-09-02T10:00:00.000Z"
+        },
+        "isDefault": true
+      }
+    ],
+    "preferences": {
+      "language": "english",
+      "preferredLanguage": "en",
+      "languageSettings": {
+        "autoDetect": true,
+        "fallbackLanguage": "en"
+      },
+      "notifications": {
+        "email": true,
+        "sms": true,
+        "push": true,
+        "emailNotifications": true,
+        "smsNotifications": true,
+        "orderUpdates": true,
+        "promotionalEmails": false,
+        "securityAlerts": true,
+        "newsletterSubscription": false
+      },
+      "privacy": {
+        "profileVisibility": "private",
+        "dataSharing": false,
+        "marketingCommunications": false,
+        "thirdPartySharing": false
+      },
+      "currency": "INR"
+    },
+    "profileCompletionStatus": {
+      "basicInfo": true,
+      "addressAdded": true,
+      "phoneVerified": true,
+      "emailVerified": true
+    },
+    "lastLogin": "2025-09-02T10:00:00.000Z",
+    "createdAt": "2025-09-02T10:00:00.000Z",
+    "updatedAt": "2025-09-02T10:00:00.000Z"
+  }
+]

@@ -396,26 +396,24 @@ router.get('/suppliers', auth, authorize('admin'), [
     
     
 switch (status) {
-      case 'approved':
-        filter.isApproved = true;
-        filter.isActive = true;
-        filter.rejectedAt = { $exists: false };
-        break;
-      case 'pending':
-        filter.isApproved = false;
-        filter.rejectedAt = { $exists: false };
-        break;
-      case 'rejected':
-        filter.rejectedAt = { $exists: true };
-        break;
-      case 'suspended':
-        filter.isApproved = true;
-        filter.isActive = false;
-        filter.rejectedAt = { $exists: false };
-        break;
-      // 'all' - no additional filter
-    }
-
+  case 'approved':
+    filter.isApproved = true;
+    filter.isActive = true;
+    filter.rejectedAt = { $exists: false };
+    break;
+  case 'pending':
+    filter.isApproved = false;
+    filter.rejectedAt = { $exists: false }; // ADD THIS LINE
+    break;
+  case 'rejected':
+    filter.rejectedAt = { $exists: true };
+    break;
+  case 'suspended':
+    filter.isApproved = true;
+    filter.isActive = false;
+    filter.rejectedAt = { $exists: false };
+    break;
+}
     if (state) filter.state = state;
     if (category) filter.categories = category;
 
@@ -5859,9 +5857,10 @@ router.get('/approvals/pending', auth, authorize('admin'), async (req, res, next
   try {
     // Get pending suppliers
     const pendingSuppliers = await Supplier.find({ 
-      isApproved: false,
-      isActive: false 
-    })
+  isApproved: false,
+  isActive: false,
+  rejectedAt: { $exists: false }
+})
     .populate('user', 'name email')
     .select('supplierId companyName tradeOwnerName email phoneNumber businessAddress createdAt')
     .sort({ createdAt: -1 });

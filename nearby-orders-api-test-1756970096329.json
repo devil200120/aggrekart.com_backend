@@ -1,0 +1,292 @@
+{
+  "timestamp": "2025-09-04T07:14:56.329Z",
+  "environment": "production",
+  "baseUrl": "https://aggrekart-com-backend.onrender.com",
+  "endpoint": "/api/pilot/available-nearby-orders",
+  "testResults": [
+    {
+      "step": "Login",
+      "status": "PASSED",
+      "result": {
+        "success": true,
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "isAvailable": false,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          }
+        },
+        "tokenPreview": "eyJhbGciOiJIUzI1NiIs..."
+      }
+    },
+    {
+      "step": "Update Location",
+      "status": "PASSED",
+      "result": {
+        "statusCode": 200,
+        "success": true,
+        "location": {
+          "latitude": 20.2961,
+          "longitude": 85.8245
+        }
+      }
+    },
+    {
+      "step": "Scenario 1",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Default parameters (15km radius, 10 orders per page)",
+        "parameters": {
+          "description": "Default parameters (15km radius, 10 orders per page)"
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    },
+    {
+      "step": "Scenario 2",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Nearby orders within 5km radius",
+        "parameters": {
+          "description": "Nearby orders within 5km radius",
+          "radius": 5
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=5 not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders?radius=5 not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    },
+    {
+      "step": "Scenario 3",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Nearby orders within 25km radius with pagination",
+        "parameters": {
+          "description": "Nearby orders within 25km radius with pagination",
+          "radius": 25,
+          "page": 1,
+          "limit": 5
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=25&page=1&limit=5 not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders?radius=25&page=1&limit=5 not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    },
+    {
+      "step": "Scenario 4",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Only urgent orders",
+        "parameters": {
+          "description": "Only urgent orders",
+          "radius": 20,
+          "orderType": "urgent"
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=20&orderType=urgent not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders?radius=20&orderType=urgent not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    },
+    {
+      "step": "Scenario 5",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Only normal orders",
+        "parameters": {
+          "description": "Only normal orders",
+          "radius": 15,
+          "orderType": "normal"
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=15&orderType=normal not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders?radius=15&orderType=normal not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    },
+    {
+      "step": "Scenario 6",
+      "status": "PASSED",
+      "result": {
+        "testCase": "Test pagination - page 2",
+        "parameters": {
+          "description": "Test pagination - page 2",
+          "radius": 20,
+          "page": 2,
+          "limit": 3
+        },
+        "statusCode": 404,
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=20&page=2&limit=3 not found",
+        "responseStructure": {
+          "hasData": false,
+          "hasOrders": false,
+          "ordersCount": 0,
+          "hasSummary": false,
+          "hasFilters": false,
+          "hasPagination": false,
+          "summaryFields": [],
+          "filtersFields": [],
+          "paginationFields": []
+        },
+        "sampleOrder": null,
+        "fullResponse": {
+          "success": false,
+          "message": "API route /api/pilot/available-nearby-orders?radius=20&page=2&limit=3 not found",
+          "availableRoutes": [
+            "/api/auth",
+            "/api/users",
+            "/api/products",
+            "/api/cart",
+            "/api/orders",
+            "/api/payments",
+            "/api/suppliers",
+            "/api/admin"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -313,7 +313,12 @@ app.use('/api/*', (req, res) => {
       '/api/orders',
       '/api/payments',
       '/api/suppliers',
-      '/api/admin'
+      '/api/admin',
+      '/api/pilot',
+      '/api/reports',
+      '/api/support',
+      '/api/loyalty',
+      '/api/translations'
     ]
   });
 });

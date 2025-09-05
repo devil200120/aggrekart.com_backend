@@ -1,0 +1,547 @@
+{
+  "health": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot../health not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "appConfig": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "supportInfo": {
+          "phone": "+91-9876543210",
+          "email": "support@aggrekart.com",
+          "whatsapp": "+91-9876543210"
+        },
+        "appVersion": {
+          "current": "1.0.0",
+          "minimum": "1.0.0"
+        },
+        "features": {
+          "liveTracking": true,
+          "otpDelivery": true,
+          "cashCollection": true
+        }
+      }
+    }
+  },
+  "register": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "value": "motorcycle",
+          "msg": "Invalid vehicle type",
+          "path": "vehicleDetails.vehicleType",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "requestOTP": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "OTP sent successfully",
+      "data": {
+        "otpSent": true,
+        "otp": "684641"
+      }
+    }
+  },
+  "login": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "Login successful",
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "phoneNumber": "9876543210",
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "isAvailable": false,
+          "currentOrder": "68afc60dabe87f29d6124497",
+          "totalDeliveries": 1,
+          "rating": {
+            "average": 5,
+            "count": 1
+          }
+        },
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaWxvdElkIjoiNjhiNWU4OTUxODcyYmZmNTU0OGYxYWI5IiwiaWF0IjoxNzU3MDYxMTUxLCJleHAiOjE3NTk2NTMxNTF9.Ni7k_39KIFuSw2wu57bNjNCa8Dbr2-f2ltazX9iVC5w"
+      }
+    }
+  },
+  "profile": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/profile not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "updateLocation": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "message": "Location updated successfully",
+      "data": {
+        "location": {
+          "latitude": 20.2961,
+          "longitude": 85.8245,
+          "lastUpdated": "2025-09-05T08:32:31.176Z"
+        }
+      }
+    }
+  },
+  "availability": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/availability not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "stats": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "pilot": {
+          "pilotId": "PIL000001",
+          "name": "Test Pilot",
+          "rating": {
+            "average": 5,
+            "count": 1
+          },
+          "totalDeliveries": 1,
+          "isAvailable": false,
+          "vehicleDetails": {
+            "registrationNumber": "KA01AB1234",
+            "vehicleType": "truck",
+            "capacity": 5,
+            "insuranceValid": false,
+            "rcValid": false
+          },
+          "joinedDate": "2025-09-01T18:40:21.539Z"
+        },
+        "stats": {
+          "_id": null,
+          "totalDeliveries": 1,
+          "totalRevenue": 148,
+          "avgDeliveryTime": 148,
+          "lastMonth": 1,
+          "thisWeek": 1,
+          "monthlyEarnings": 1435818.950407789,
+          "monthlyDeliveries": 1
+        },
+        "recentDeliveries": [
+          {
+            "pricing": {
+              "totalAmount": 148
+            },
+            "delivery": {
+              "actualDeliveryTime": "2025-09-01T19:38:31.034Z"
+            },
+            "_id": "689f5906a93dac5fd8b77078",
+            "orderId": "AGK1755273478411UWC",
+            "customer": {
+              "_id": "689209c693ad74cc3ed85507",
+              "name": "Subhankar Dash"
+            }
+          }
+        ],
+        "performance": {
+          "averageRating": 5,
+          "totalRatings": 1,
+          "onTimeDeliveryRate": 95,
+          "customerSatisfactionRate": 98
+        }
+      }
+    }
+  },
+  "dashboard": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/dashboard-stats not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "availableNearbyOrders": [
+    {
+      "testCase": "Default parameters",
+      "success": false,
+      "status": 404,
+      "data": {
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders not found",
+        "availableRoutes": [
+          "/api/auth",
+          "/api/users",
+          "/api/products",
+          "/api/cart",
+          "/api/orders",
+          "/api/payments",
+          "/api/suppliers",
+          "/api/admin",
+          "/api/pilot",
+          "/api/reports",
+          "/api/support",
+          "/api/loyalty",
+          "/api/translations"
+        ]
+      },
+      "hasOrders": false,
+      "ordersCount": 0,
+      "hasSummary": false,
+      "hasFilters": false,
+      "hasPagination": false
+    },
+    {
+      "testCase": "5km radius",
+      "success": false,
+      "status": 404,
+      "data": {
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=5 not found",
+        "availableRoutes": [
+          "/api/auth",
+          "/api/users",
+          "/api/products",
+          "/api/cart",
+          "/api/orders",
+          "/api/payments",
+          "/api/suppliers",
+          "/api/admin",
+          "/api/pilot",
+          "/api/reports",
+          "/api/support",
+          "/api/loyalty",
+          "/api/translations"
+        ]
+      },
+      "hasOrders": false,
+      "ordersCount": 0,
+      "hasSummary": false,
+      "hasFilters": false,
+      "hasPagination": false
+    },
+    {
+      "testCase": "10km with pagination",
+      "success": false,
+      "status": 404,
+      "data": {
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=10&page=1&limit=5 not found",
+        "availableRoutes": [
+          "/api/auth",
+          "/api/users",
+          "/api/products",
+          "/api/cart",
+          "/api/orders",
+          "/api/payments",
+          "/api/suppliers",
+          "/api/admin",
+          "/api/pilot",
+          "/api/reports",
+          "/api/support",
+          "/api/loyalty",
+          "/api/translations"
+        ]
+      },
+      "hasOrders": false,
+      "ordersCount": 0,
+      "hasSummary": false,
+      "hasFilters": false,
+      "hasPagination": false
+    },
+    {
+      "testCase": "Urgent orders only",
+      "success": false,
+      "status": 404,
+      "data": {
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=15&orderType=urgent not found",
+        "availableRoutes": [
+          "/api/auth",
+          "/api/users",
+          "/api/products",
+          "/api/cart",
+          "/api/orders",
+          "/api/payments",
+          "/api/suppliers",
+          "/api/admin",
+          "/api/pilot",
+          "/api/reports",
+          "/api/support",
+          "/api/loyalty",
+          "/api/translations"
+        ]
+      },
+      "hasOrders": false,
+      "ordersCount": 0,
+      "hasSummary": false,
+      "hasFilters": false,
+      "hasPagination": false
+    },
+    {
+      "testCase": "Normal orders only",
+      "success": false,
+      "status": 404,
+      "data": {
+        "success": false,
+        "message": "API route /api/pilot/available-nearby-orders?radius=15&orderType=normal not found",
+        "availableRoutes": [
+          "/api/auth",
+          "/api/users",
+          "/api/products",
+          "/api/cart",
+          "/api/orders",
+          "/api/payments",
+          "/api/suppliers",
+          "/api/admin",
+          "/api/pilot",
+          "/api/reports",
+          "/api/support",
+          "/api/loyalty",
+          "/api/translations"
+        ]
+      },
+      "hasOrders": false,
+      "ordersCount": 0,
+      "hasSummary": false,
+      "hasFilters": false,
+      "hasPagination": false
+    }
+  ],
+  "scanOrder": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "error": {
+        "statusCode": 400,
+        "isOperational": true
+      },
+      "message": "Order already assigned to another pilot",
+      "stack": "Error: Order already assigned to another pilot\n    at C:\\Users\\KIIT0001\\Desktop\\builder_website using mern\\routes\\pilot.js:226:19\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+    }
+  },
+  "acceptOrder": {
+    "success": false,
+    "status": 400,
+    "error": "Request failed with status code 400",
+    "data": {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [
+        {
+          "type": "field",
+          "msg": "Pilot ID is required",
+          "path": "pilotId",
+          "location": "body"
+        }
+      ]
+    }
+  },
+  "assignedOrders": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/assigned-orders not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "deliveryHistory": {
+    "success": true,
+    "status": 200,
+    "data": {
+      "success": true,
+      "data": {
+        "deliveries": [
+          {
+            "orderId": "AGK1755273478411UWC",
+            "customer": {
+              "_id": "689209c693ad74cc3ed85507",
+              "name": "Subhankar Dash",
+              "phoneNumber": "7681879862"
+            },
+            "supplier": {
+              "_id": "6883d69df2e9353f0a533ed9",
+              "companyName": "subankar trader"
+            },
+            "deliveryAddress": {
+              "coordinates": {},
+              "address": "Suchitra X Rd, Ramraju Nagar, Jeedimetla, Hyderabad, Secunderabad, Telangana 500067, India",
+              "city": "Hyderabad",
+              "state": "Telangana",
+              "pincode": "500067"
+            },
+            "totalAmount": 148,
+            "status": "delivered",
+            "deliveredAt": "2025-09-01T19:38:31.034Z",
+            "orderDate": "2025-08-15T15:57:58.432Z",
+            "deliveryNotes": "Package delivered successfully to customer"
+          }
+        ],
+        "pagination": {
+          "currentPage": 1,
+          "totalPages": 1,
+          "totalItems": 1,
+          "hasNext": false,
+          "hasPrev": false
+        }
+      }
+    }
+  },
+  "notifications": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/notifications not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  },
+  "support": {
+    "success": false,
+    "status": 404,
+    "error": "Request failed with status code 404",
+    "data": {
+      "success": false,
+      "message": "API route /api/pilot/support not found",
+      "availableRoutes": [
+        "/api/auth",
+        "/api/users",
+        "/api/products",
+        "/api/cart",
+        "/api/orders",
+        "/api/payments",
+        "/api/suppliers",
+        "/api/admin",
+        "/api/pilot",
+        "/api/reports",
+        "/api/support",
+        "/api/loyalty",
+        "/api/translations"
+      ]
+    }
+  }
+}

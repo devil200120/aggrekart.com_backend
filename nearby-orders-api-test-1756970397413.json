@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-09-04T07:19:57.413Z",
+  "environment": "production",
+  "baseUrl": "http://127.0.0.1:5000",
+  "endpoint": "/api/pilot/available-nearby-orders",
+  "testResults": [
+    {
+      "step": "Test Execution",
+      "status": "FAILED",
+      "error": "connect ECONNREFUSED 127.0.0.1:443"
+    }
+  ]
+}
