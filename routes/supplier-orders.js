@@ -290,7 +290,10 @@ router.patch('/:orderId/status', auth, authorize('supplier'), [
     if (status === 'dispatched') {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       order.delivery.deliveryOTP = otp;
-      
+      console.log(`🔑 DELIVERY OTP for Order ${order.orderId}: ${otp}`);
+  console.log(`📱 Customer Phone: ${order.customer?.phoneNumber}`);
+  console.log(`👤 Customer Name: ${order.customer?.name}`);
+  console.log(`📦 Share this OTP with the delivery person`);
       // Send OTP to customer
       try {
         if (order.customer && order.customer.phoneNumber) {
@@ -1161,7 +1164,7 @@ function createStatusUpdateEmail(customerName, orderId, status, order) {
             </div>
             
             <div style="text-align: center;">
-                <a href="http://localhost:3000/orders/${orderId}" class="cta-button">Track Your Order</a>
+                <a href="https://aggrekart-com.onrender.com/orders/${orderId}" class="cta-button">Track Your Order</a>
             </div>
             
             <div class="footer">

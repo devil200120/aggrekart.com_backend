@@ -468,7 +468,7 @@ router.post('/cashfree/create-order', auth, [
     console.log('🟠 Step 8: Calling PaymentGateway.createCashfreeOrder');
     console.log('🟠 Parameters:', {
       orderId,
-      amount,
+      amount: parseFloat(amount.toFixed(2)), // Ensure amount is in rupees for Cashfree
       customerEmail: order.customer.email,
       customerPhone: order.customer.phoneNumber,
       customerName: order.customer.name
@@ -477,7 +477,7 @@ router.post('/cashfree/create-order', auth, [
     // Create Cashfree order using the working direct API
     const result = await PaymentGateway.createCashfreeOrder({
       orderId,
-      amount,
+      amount: parseFloat(amount.toFixed(2)), // Ensure amount is in rupees for Cashfree
       customerEmail: order.customer.email,
       customerPhone: order.customer.phoneNumber,
       customerName: order.customer.name

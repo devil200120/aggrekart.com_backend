@@ -324,7 +324,7 @@ const createCashfreeOrder = async (orderDetails) => {
       success: true,
       data: {
         id: response.data.order_id,
-        amount: Math.round(amount * 100), // Convert to paise for consistency
+        amount: parseFloat(amount.toFixed(2)), // Keep amount in rupees for Cashfree
         currency: currency,
         payment_session_id: response.data.payment_session_id,
         order_token: response.data.order_token,

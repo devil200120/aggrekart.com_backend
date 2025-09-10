@@ -216,7 +216,7 @@ router.post('/scan-order', pilotAuth, [
 
     const order = await Order.findOne(query)
     .populate('customer', 'name phoneNumber addresses')
-    .populate('supplier', 'companyName contactPersonNumber address');
+    .populate('supplier', 'companyName contactPersonNumber companyAddress dispatchLocation city state pincode');
 
     if (!order) {
       return next(new ErrorHandler('Order not found or not ready for pickup', 404));
@@ -242,12 +242,27 @@ router.post('/scan-order', pilotAuth, [
           customer: {
             name: order.customer.name,
             phoneNumber: order.customer.phoneNumber,
-            address: order.deliveryAddress || order.customer.addresses?.[0]
+            // ✅ FIXED: Get address from deliveryAddress first, then fallback to customer addresses
+            address: order.deliveryAddress?.address || 
+                    order.customer.addresses?.[0]?.address || 
+                    'Address not available'
           },
           supplier: {
             companyName: order.supplier.companyName,
             contactNumber: order.supplier.contactPersonNumber,
-            address: order.supplier.address
+            // ✅ FIXED: Use companyAddress or dispatchLocation.address for supplier address
+            address: order.supplier.companyAddress || 
+                    order.supplier.dispatchLocation?.address || 
+                    'Supplier address not available'
+          },
+          // ✅ FIXED: Include delivery address separately for pickup/drop info
+          deliveryAddress: {
+            pickup: order.supplier?.companyAddress || 
+                   order.supplier?.dispatchLocation?.address || 
+                   'Supplier address not available',
+            drop: order.deliveryAddress?.address || 
+                  order.customer.addresses?.[0]?.address || 
+                  'Delivery address not available'
           },
           items: order.items.map(item => ({
             name: item.productSnapshot?.name || item.product.name,
@@ -256,7 +271,7 @@ router.post('/scan-order', pilotAuth, [
             totalPrice: item.totalPrice
           })),
           pricing: order.pricing,
-          totalAmount: order.pricing.totalAmount,
+          totalAmount: order.pricing?.totalAmount || 0, // ✅ FIXED: Ensure totalAmount is always a number
           estimatedDeliveryTime: order.delivery?.estimatedTime || '2-4 hours',
           specialInstructions: order.notes,
           status: order.status
@@ -270,7 +285,7 @@ router.post('/scan-order', pilotAuth, [
 });
 
 // @route   POST /api/pilot/accept-order
-// @desc    Accept delivery order
+// @desc    Accept deliveryu order
 // @access  Private (Pilot)
 router.post('/accept-order', pilotAuth, [
   body('orderId').notEmpty().withMessage('Order ID is required'),
@@ -879,6 +894,11 @@ router.get('/delivery-history', pilotAuth, [
     next(error);
   }
 });
+
+// @route   GET /api/pilot/available-nearby-orders
+// @desc    Get available orders nearby that are not assigned to any pilot yet
+// @access  Private (Pilot)
+
 // ADD these missing endpoints:
 
 // @route   GET /api/pilot/dashboard/stats
@@ -1071,4 +1091,678 @@ router.post('/support/contact', pilotAuth, [
     next(error);
   }
 });
+
+
+// Add these new endpoints to your existing pilot.js file
+
+// @route   GET /api/pilot/delivery-details/:orderId
+// @desc    Get detailed delivery information for a specific order
+// @access  Private (Pilot)
+router.get('/delivery-details/:orderId', pilotAuth, [
+  param('orderId').notEmpty().withMessage('Order ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId } = req.params;
+    const pilot = req.pilot; // Get the full pilot object
+
+    // FIXED: Use correct field path and pilot ObjectId
+    const order = await Order.findOne({
+      orderId: orderId,
+      'delivery.pilotAssigned': pilot._id // Use pilot._id (ObjectId), not pilotId (string)
+    })
+    .populate('customer', 'name phoneNumber addresses')
+    .populate('supplier', 'companyName address phoneNumber')
+    .populate('products.product', 'name category')
+    .lean();
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found or not assigned to you'
+      });
+    }
+
+    // Calculate earnings and format response
+    const pilotEarnings = order.pricing?.transportCost ? 
+      (order.pricing.transportCost * 0.7) : 0;
+
+    const deliveryDetails = {
+      orderId: order.orderId,
+      customer: {
+        name: order.customer?.name || 'N/A',
+        phoneNumber: order.customer?.phoneNumber || 'N/A',
+        address: order.deliveryAddress || order.customer?.addresses?.[0] || 'N/A'
+      },
+      supplier: {
+        companyName: order.supplier?.companyName || 'N/A',
+        address: order.supplier?.address || 'N/A',
+        phoneNumber: order.supplier?.phoneNumber || 'N/A'
+      },
+      items: order.products?.map(item => ({
+        name: item.product?.name || 'Unknown Product',
+        category: item.product?.category || 'N/A',
+        quantity: item.quantity || 0,
+        weight: item.weight || 0,
+        price: item.price || 0
+      })) || [],
+      pricing: {
+        totalAmount: order.totalAmount || 0,
+        transportCost: order.pricing?.transportCost || 0,
+        pilotEarnings: pilotEarnings
+      },
+      timing: {
+        orderDate: order.createdAt,
+        assignedAt: order.delivery?.assignedAt || null,
+        pickedUpAt: order.delivery?.pickedUpAt || null,
+        deliveredAt: order.delivery?.deliveredAt || null,
+        estimatedDelivery: order.delivery?.estimatedDeliveryTime || null
+      },
+      status: order.orderStatus || 'unknown',
+      paymentMethod: order.paymentMethod || 'N/A',
+      deliveryInstructions: order.deliveryInstructions || null,
+      deliveryOTP: order.deliveryOTP || null,
+      timeline: order.timeline || []
+    };
+
+    res.json({
+      success: true,
+      data: deliveryDetails
+    });
+
+  } catch (error) {
+    console.error('Error fetching delivery details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching delivery details',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+
+// @route   GET /api/pilot/my-deliveries-enhanced
+// @desc    Get enhanced delivery history with detailed metrics
+// @access  Private (Pilot)
+router.get('/my-deliveries-enhanced', pilotAuth, [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive'),
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be 1-50'),
+  query('status').optional().isIn(['delivered', 'cancelled', 'dispatched']).withMessage('Invalid status'),
+  query('startDate').optional().isISO8601().withMessage('Invalid start date'),
+  query('endDate').optional().isISO8601().withMessage('Invalid end date'),
+  query('sortBy').optional().isIn(['date', 'amount', 'duration']).withMessage('Invalid sort field')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const pilot = req.pilot;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const status = req.query.status;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+    const sortBy = req.query.sortBy || 'date';
+    const skip = (page - 1) * limit;
+
+    // Build query using your schema
+    const query = {
+      'delivery.pilotAssigned': pilot._id
+    };
+
+    if (status) {
+      query.status = status;
+    } else {
+      query.status = { $in: ['delivered', 'cancelled', 'dispatched'] };
+    }
+
+    // Date range filter
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    // Sort options
+    let sortOption = {};
+    switch (sortBy) {
+      case 'amount':
+        sortOption = { 'pricing.totalAmount': -1 };
+        break;
+      case 'duration':
+        sortOption = { 'delivery.actualDeliveryTime': -1 };
+        break;
+      default:
+        sortOption = { createdAt: -1 };
+    }
+
+    // Get deliveries with your exact schema
+    const deliveries = await Order.find(query)
+      .populate('customer', 'name phoneNumber')
+      .populate('supplier', 'companyName')
+      .populate('items.product', 'name category weight')
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Order.countDocuments(query);
+
+    // Enhanced delivery data with metrics
+    const enhancedDeliveries = deliveries.map(order => {
+      const assignedTime = order.timeline.find(t => t.status === 'dispatched')?.timestamp;
+      const completedTime = order.delivery.actualDeliveryTime;
+      
+      let deliveryDuration = null;
+      if (assignedTime && completedTime) {
+        deliveryDuration = Math.round((completedTime - assignedTime) / (1000 * 60));
+      }
+
+      const totalWeight = order.items.reduce((sum, item) => 
+        sum + ((item.product?.weight || 0) * item.quantity), 0
+      );
+
+      const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+      return {
+        orderId: order.orderId,
+        customer: {
+          name: order.customer.name,
+          phoneNumber: order.customer.phoneNumber,
+          city: order.deliveryAddress?.city
+        },
+        supplier: {
+          companyName: order.supplier.companyName
+        },
+        items: {
+          count: order.items.length,
+          totalQuantity: totalItems,
+          totalWeight: totalWeight,
+          categories: [...new Set(order.items.map(item => item.product?.category).filter(Boolean))]
+        },
+        pricing: {
+          totalAmount: order.pricing.totalAmount,
+          transportCost: order.pricing.transportCost,
+          pilotEarnings: order.pricing.transportCost * 0.7
+        },
+        timing: {
+          orderDate: order.createdAt,
+          assignedAt: assignedTime,
+          completedAt: completedTime,
+          duration: deliveryDuration ? `${Math.floor(deliveryDuration / 60)}h ${deliveryDuration % 60}m` : null,
+          durationMinutes: deliveryDuration
+        },
+        status: order.status,
+        deliveryNotes: order.delivery.deliveryNotes,
+        paymentMethod: order.payment.method,
+        codAmount: order.payment.method === 'cod' ? order.pricing.totalAmount : order.payment.remainingAmount,
+        otp: order.delivery.deliveryOTP
+      };
+    });
+
+    // Calculate summary statistics
+    const stats = {
+      totalDeliveries: total,
+      completedDeliveries: enhancedDeliveries.filter(d => d.status === 'delivered').length,
+      totalEarnings: enhancedDeliveries.reduce((sum, d) => sum + (d.pricing.pilotEarnings || 0), 0),
+      averageDeliveryTime: enhancedDeliveries
+        .filter(d => d.timing.durationMinutes)
+        .reduce((sum, d, _, arr) => sum + d.timing.durationMinutes / arr.length, 0),
+      codDeliveries: enhancedDeliveries.filter(d => d.paymentMethod === 'cod').length
+    };
+
+    res.json({
+      success: true,
+      data: {
+        deliveries: enhancedDeliveries,
+        stats,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalItems: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/pilot/delivery-analytics
+// @desc    Get detailed analytics for pilot deliveries
+// @access  Private (Pilot)
+router.get('/delivery-analytics', pilotAuth, [
+  query('period').optional().isIn(['week', 'month', 'quarter', 'year']).withMessage('Invalid period')
+], async (req, res, next) => {
+  try {
+    const pilot = req.pilot;
+    const period = req.query.period || 'month';
+
+    // Calculate date range
+    const now = new Date();
+    let startDate;
+    
+    switch (period) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'quarter':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default: // month
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    // Analytics using your exact schema
+    const analytics = await Order.aggregate([
+      {
+        $match: {
+          'delivery.pilotAssigned': pilot._id,
+          status: 'delivered',
+          'delivery.actualDeliveryTime': { $gte: startDate }
+        }
+      },
+      {
+        $addFields: {
+          deliveryDuration: {
+            $divide: [
+              { $subtract: ['$delivery.actualDeliveryTime', '$createdAt'] },
+              1000 * 60 // Convert to minutes
+            ]
+          },
+          dayOfWeek: { $dayOfWeek: '$delivery.actualDeliveryTime' },
+          hourOfDay: { $hour: '$delivery.actualDeliveryTime' },
+          pilotEarnings: { $multiply: ['$pricing.transportCost', 0.7] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDeliveries: { $sum: 1 },
+          totalEarnings: { $sum: '$pilotEarnings' },
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          avgDeliveryTime: { $avg: '$deliveryDuration' },
+          avgOrderValue: { $avg: '$pricing.totalAmount' },
+          codDeliveries: {
+            $sum: { $cond: [{ $eq: ['$payment.method', 'cod'] }, 1, 0] }
+          },
+          onlineDeliveries: {
+            $sum: { $cond: [{ $ne: ['$payment.method', 'cod'] }, 1, 0] }
+          },
+          // Day-wise distribution
+          weekdayDeliveries: {
+            $sum: { $cond: [{ $lte: ['$dayOfWeek', 5] }, 1, 0] }
+          },
+          weekendDeliveries: {
+            $sum: { $cond: [{ $gt: ['$dayOfWeek', 5] }, 1, 0] }
+          },
+          // Time-wise distribution
+          morningDeliveries: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$hourOfDay', 6] }, { $lt: ['$hourOfDay', 12] }] }, 1, 0] }
+          },
+          afternoonDeliveries: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$hourOfDay', 12] }, { $lt: ['$hourOfDay', 18] }] }, 1, 0] }
+          },
+          eveningDeliveries: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$hourOfDay', 18] }, { $lt: ['$hourOfDay', 22] }] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Get top customers by delivery count
+    const topCustomers = await Order.aggregate([
+      {
+        $match: {
+          'delivery.pilotAssigned': pilot._id,
+          status: 'delivered',
+          'delivery.actualDeliveryTime': { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$customer',
+          orderCount: { $sum: 1 },
+          totalValue: { $sum: '$pricing.totalAmount' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'customerInfo'
+        }
+      },
+      {
+        $project: {
+          name: { $arrayElemAt: ['$customerInfo.name', 0] },
+          phoneNumber: { $arrayElemAt: ['$customerInfo.phoneNumber', 0] },
+          orderCount: 1,
+          totalValue: 1
+        }
+      },
+      { $sort: { orderCount: -1 } },
+      { $limit: 5 }
+    ]);
+
+    // Daily performance trends
+    const dailyTrends = await Order.aggregate([
+      {
+        $match: {
+          'delivery.pilotAssigned': pilot._id,
+          status: 'delivered',
+          'delivery.actualDeliveryTime': { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$delivery.actualDeliveryTime'
+            }
+          },
+          deliveries: { $sum: 1 },
+          earnings: { $sum: { $multiply: ['$pricing.transportCost', 0.7] } },
+          revenue: { $sum: '$pricing.totalAmount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const result = analytics[0] || {};
+    
+    res.json({
+      success: true,
+      data: {
+        period,
+        dateRange: {
+          from: startDate,
+          to: now
+        },
+        summary: {
+          totalDeliveries: result.totalDeliveries || 0,
+          totalEarnings: Math.round(result.totalEarnings || 0),
+          totalRevenue: Math.round(result.totalRevenue || 0),
+          avgDeliveryTime: result.avgDeliveryTime ? 
+            `${Math.floor(result.avgDeliveryTime / 60)}h ${Math.round(result.avgDeliveryTime % 60)}m` : '0m',
+          avgOrderValue: Math.round(result.avgOrderValue || 0),
+          deliveryRate: result.totalDeliveries > 0 ? '100%' : '0%'
+        },
+        distribution: {
+          paymentMethods: {
+            cod: result.codDeliveries || 0,
+            online: result.onlineDeliveries || 0
+          },
+          timeSlots: {
+            morning: result.morningDeliveries || 0,
+            afternoon: result.afternoonDeliveries || 0,
+            evening: result.eveningDeliveries || 0
+          },
+          weekPattern: {
+            weekdays: result.weekdayDeliveries || 0,
+            weekends: result.weekendDeliveries || 0
+          }
+        },
+        topCustomers,
+        dailyTrends
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/pilot/earnings-report
+// @desc    Get detailed monthly earnings report
+// @access  Private (Pilot)
+router.get('/earnings-report', pilotAuth, [
+  query('month').optional().isInt({ min: 1, max: 12 }).withMessage('Invalid month'),
+  query('year').optional().isInt({ min: 2020 }).withMessage('Invalid year')
+], async (req, res, next) => {
+  try {
+    const pilot = req.pilot;
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    // Create date range for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    // Get detailed earnings data using your schema
+    const earningsData = await Order.aggregate([
+      {
+        $match: {
+          'delivery.pilotAssigned': pilot._id,
+          status: 'delivered',
+          'delivery.actualDeliveryTime': {
+            $gte: startDate,
+            $lte: endDate
+          }
+        }
+      },
+      {
+        $addFields: {
+          pilotEarnings: { $multiply: ['$pricing.transportCost', 0.7] },
+          dayOfMonth: { $dayOfMonth: '$delivery.actualDeliveryTime' }
+        }
+      },
+      {
+        $group: {
+          _id: '$dayOfMonth',
+          deliveries: { $sum: 1 },
+          earnings: { $sum: '$pilotEarnings' },
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          orders: {
+            $push: {
+              orderId: '$orderId',
+              amount: '$pricing.totalAmount',
+              earnings: '$pilotEarnings',
+              deliveredAt: '$delivery.actualDeliveryTime',
+              paymentMethod: '$payment.method'
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Calculate monthly totals
+    const monthlyTotals = await Order.aggregate([
+      {
+        $match: {
+          'delivery.pilotAssigned': pilot._id,
+          status: 'delivered',
+          'delivery.actualDeliveryTime': {
+            $gte: startDate,
+            $lte: endDate
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDeliveries: { $sum: 1 },
+          totalEarnings: { $sum: { $multiply: ['$pricing.transportCost', 0.7] } },
+          totalRevenue: { $sum: '$pricing.totalAmount' },
+          avgOrderValue: { $avg: '$pricing.totalAmount' },
+          codDeliveries: {
+            $sum: { $cond: [{ $eq: ['$payment.method', 'cod'] }, 1, 0] }
+          },
+          onlineDeliveries: {
+            $sum: { $cond: [{ $ne: ['$payment.method', 'cod'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    const totals = monthlyTotals[0] || {};
+
+    res.json({
+      success: true,
+      data: {
+        period: {
+          month,
+          year,
+          monthName: new Date(year, month - 1).toLocaleDateString('en-US', { month: 'long' })
+        },
+        summary: {
+          totalDeliveries: totals.totalDeliveries || 0,
+          totalEarnings: Math.round(totals.totalEarnings || 0),
+          totalRevenue: Math.round(totals.totalRevenue || 0),
+          avgOrderValue: Math.round(totals.avgOrderValue || 0),
+          avgEarningsPerDelivery: totals.totalDeliveries ? 
+            Math.round(totals.totalEarnings / totals.totalDeliveries) : 0,
+          codDeliveries: totals.codDeliveries || 0,
+          onlineDeliveries: totals.onlineDeliveries || 0
+        },
+        dailyBreakdown: earningsData.map(day => ({
+          date: day._id,
+          deliveries: day.deliveries,
+          earnings: Math.round(day.earnings),
+          revenue: Math.round(day.totalRevenue),
+          orders: day.orders
+        })),
+        pilotInfo: {
+          pilotId: pilot.pilotId,
+          name: pilot.name,
+          totalDeliveries: pilot.totalDeliveries,
+          rating: pilot.rating
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/pilot/update-delivery-status
+// @desc    Update delivery status with location and timing
+// @access  Private (Pilot)
+router.post('/update-delivery-status', pilotAuth, [
+  body('orderId').notEmpty().withMessage('Order ID is required'),
+  body('status').isIn(['picked_up', 'in_transit', 'delivered', 'failed']).withMessage('Invalid status'),
+  body('location.latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+  body('location.longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+  body('notes').optional().isLength({ max: 500 }).withMessage('Notes too long')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { orderId, status, location, notes } = req.body;
+    const pilot = req.pilot; // Get the full pilot object
+
+    // FIXED: Use correct field path and pilot ObjectId
+    const order = await Order.findOne({
+      orderId: orderId,
+      'delivery.pilotAssigned': pilot._id // Use pilot._id (ObjectId), not pilotId (string)
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found or not assigned to you'
+      });
+    }
+
+    // Update order status and delivery information
+    const updateData = {
+      orderStatus: status
+    };
+
+    // Update delivery object based on status
+    if (status === 'picked_up') {
+      updateData['delivery.pickedUpAt'] = new Date();
+      updateData['delivery.currentLocation'] = location;
+    } else if (status === 'in_transit') {
+      updateData['delivery.currentLocation'] = location;
+      updateData['delivery.lastLocationUpdate'] = new Date();
+    } else if (status === 'delivered') {
+      updateData['delivery.deliveredAt'] = new Date();
+      updateData['delivery.currentLocation'] = location;
+      updateData['actualDeliveryTime'] = new Date();
+    }
+
+    // Add timeline entry
+    const timelineEntry = {
+      status: status,
+      timestamp: new Date(),
+      notes: notes || `Status updated to ${status}`,
+      location: location
+    };
+
+    await Order.findOneAndUpdate(
+      { orderId: orderId, 'delivery.pilotAssigned': pilot._id }, // FIXED: Use pilot._id
+      {
+        ...updateData,
+        $push: { timeline: timelineEntry }
+      },
+      { new: true }
+    );
+
+    // Update pilot's current location if provided
+    if (location) {
+      await Pilot.findByIdAndUpdate(pilot._id, {
+        currentLocation: {
+          type: 'Point',
+          coordinates: [location.longitude, location.latitude]
+        },
+        lastLocationUpdate: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Order status updated to ${status}`,
+      data: {
+        orderId: orderId,
+        status: status,
+        timestamp: new Date(),
+        location: location,
+        notes: notes
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating delivery status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating delivery status',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+
 module.exports = router;

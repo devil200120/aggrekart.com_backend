@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const loyaltyService = require('../utils/loyaltyService');
-
+// Add this line after line 2 (after const loyaltyService require)
+const AdvancePaymentConfig = require('./AdvancePaymentConfig');
 const orderItemSchema = new mongoose.Schema({
   product: {
     type: mongoose.Schema.Types.ObjectId,
@@ -171,7 +172,7 @@ payment: {
   paymentGatewayResponse: mongoose.Schema.Types.Mixed,
   advancePercentage: {
     type: Number,
-    min: 25,
+    min: 1,
     max: 100,
     default: 25
   },
@@ -325,6 +326,7 @@ orderSchema.index({ 'payment.transactionId': 1 });
 orderSchema.index({ 'payment.razorpayOrderId': 1 });
 
 // Generate unique order ID
+// Replace lines 327-350 with this updated version:
 orderSchema.pre('save', async function(next) {
   if (!this.orderId) {
     const count = await mongoose.models.Order.countDocuments();
@@ -338,12 +340,31 @@ orderSchema.pre('save', async function(next) {
     );
   }
   
-  // Calculate advance and remaining amounts
-  if (this.payment.advancePercentage && this.pricing.totalAmount) {
+  // Calculate advance and remaining amounts based on category configuration
+  if (this.pricing.totalAmount) {
+    let advancePercentage = this.payment.advancePercentage || 25; // Default fallback
+    
+    // Get advance percentage based on product category if not manually set
+    if (!this.payment.advancePercentage && this.items && this.items.length > 0) {
+      try {
+        // Get the primary category from the first item
+        const primaryCategory = this.items[0].productSnapshot?.category;
+        if (primaryCategory) {
+          const configOptions = await AdvancePaymentConfig.getAdvanceOptionsForCategory(primaryCategory);
+          advancePercentage = configOptions.defaultPercentage || 25;
+        }
+      } catch (error) {
+        console.warn('Failed to get advance payment config, using default:', error);
+        advancePercentage = 25;
+      }
+    }
+    
+    // Update the payment object with calculated values
+    this.payment.advancePercentage = advancePercentage;
     this.payment.advanceAmount = Math.round(
-      (this.pricing.totalAmount * this.payment.advancePercentage) / 100
+      (this.pricing.totalAmount * advancePercentage) / 100
     );
-   this.payment.remainingAmount = Math.max(0, Math.round((this.pricing.totalAmount - this.payment.advanceAmount) * 100) / 100);
+    this.payment.remainingAmount = Math.max(0, Math.round((this.pricing.totalAmount - this.payment.advanceAmount) * 100) / 100);
   }
   
   next();

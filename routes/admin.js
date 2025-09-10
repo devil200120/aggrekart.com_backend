@@ -16,7 +16,9 @@ const MembershipConfig = require('../models/MembershipConfig');
 const SupplierPromotion = require('../models/SupplierPromotion');
 const LoyaltyProgram = require('../models/LoyaltyProgram');
 const mongoose = require('mongoose'); // ADD THIS LINE
-const Ticket = require('../models/Ticket'); 
+const Ticket = require('../models/Ticket');
+const AdvancePaymentConfig = require('../models/AdvancePaymentConfig');
+
 // @route   GET /api/admin/dashboard
 // @desc    Get admin dashboard statistics
 // @access  Private (Admin)
@@ -396,26 +398,24 @@ router.get('/suppliers', auth, authorize('admin'), [
     
     
 switch (status) {
-      case 'approved':
-        filter.isApproved = true;
-        filter.isActive = true;
-        filter.rejectedAt = { $exists: false };
-        break;
-      case 'pending':
-        filter.isApproved = false;
-        filter.rejectedAt = { $exists: false };
-        break;
-      case 'rejected':
-        filter.rejectedAt = { $exists: true };
-        break;
-      case 'suspended':
-        filter.isApproved = true;
-        filter.isActive = false;
-        filter.rejectedAt = { $exists: false };
-        break;
-      // 'all' - no additional filter
-    }
-
+  case 'approved':
+    filter.isApproved = true;
+    filter.isActive = true;
+    filter.rejectedAt = { $exists: false };
+    break;
+  case 'pending':
+    filter.isApproved = false;
+    filter.rejectedAt = { $exists: false }; // ADD THIS LINE
+    break;
+  case 'rejected':
+    filter.rejectedAt = { $exists: true };
+    break;
+  case 'suspended':
+    filter.isApproved = true;
+    filter.isActive = false;
+    filter.rejectedAt = { $exists: false };
+    break;
+}
     if (state) filter.state = state;
     if (category) filter.categories = category;
 
@@ -5857,11 +5857,18 @@ AggreKart Admin Team`,
 // @access  Private (Admin)
 router.get('/approvals/pending', auth, authorize('admin'), async (req, res, next) => {
   try {
+    const pendingPilots = await Pilot.find({ 
+  isApproved: false 
+})
+.select('pilotId name phoneNumber vehicleDetails createdAt email')
+.sort({ createdAt: -1 });
+
     // Get pending suppliers
     const pendingSuppliers = await Supplier.find({ 
-      isApproved: false,
-      isActive: false 
-    })
+  isApproved: false,
+  isActive: false,
+  rejectedAt: { $exists: false }
+})
     .populate('user', 'name email')
     .select('supplierId companyName tradeOwnerName email phoneNumber businessAddress createdAt')
     .sort({ createdAt: -1 });
@@ -5894,7 +5901,17 @@ router.get('/approvals/pending', auth, authorize('admin'), async (req, res, next
         entityId: product._id,
         createdAt: product.createdAt,
         status: 'pending'
-      }))
+      })),
+      ...pendingPilots.map(pilot => ({
+    _id: pilot._id,
+    type: 'pilot',
+    title: `Pilot: ${pilot.name}`,
+    description: `${pilot.pilotId} - ${pilot.phoneNumber} - ${pilot.vehicleDetails?.vehicleType || 'Vehicle'}`,
+    entityId: pilot._id,
+    createdAt: pilot.createdAt,
+    status: 'pending'
+  }))
+
     ];
 
     // Sort by creation date (newest first)
@@ -5907,7 +5924,8 @@ router.get('/approvals/pending', auth, authorize('admin'), async (req, res, next
         counts: {
           total: approvals.length,
           suppliers: pendingSuppliers.length,
-          products: pendingProducts.length
+          products: pendingProducts.length,
+          pilots: pendingPilots.length  
         }
       }
     });
@@ -5995,7 +6013,7 @@ router.put('/approvals/:approvalId/:action', auth, authorize('admin'), [
 
     const { approvalId, action } = req.params;
     const { reason } = req.body;
-
+      
     // Try supplier first
     let supplier = await Supplier.findById(approvalId);
     if (supplier) {
@@ -7188,7 +7206,12 @@ router.post('/pilots/:pilotId/approve', auth, authorize('admin'), [
     const { pilotId } = req.params;
     const { notes } = req.body;
 
-    const pilot = await Pilot.findOne({ pilotId });
+
+    const pilot = await Pilot.findOne({
+  $or: [{ _id: pilotId }, { pilotId }]
+});
+
+
     if (!pilot) {
       return next(new ErrorHandler('Pilot not found', 404));
     }
@@ -7309,6 +7332,250 @@ router.get('/pilots/analytics', auth, authorize('admin'), async (req, res, next)
     next(error);
   }
 });
+router.get('/advance-payment-config', auth, authorize('admin'), async (req, res, next) => {
+  try {
+    const configs = await AdvancePaymentConfig.find({ isActive: true })
+      .populate('lastUpdatedBy', 'name email')
+      .sort({ category: 1 });
 
+    // If no configs exist, create default ones
+    if (configs.length === 0) {
+      const defaultConfigs = AdvancePaymentConfig.getDefaultConfig();
+      const createdConfigs = await Promise.all(
+        defaultConfigs.map(config => 
+          AdvancePaymentConfig.create({
+            ...config,
+            lastUpdatedBy: req.user._id
+          })
+        )
+      );
+      
+      return res.json({
+        success: true,
+        data: createdConfigs,
+        message: 'Default advance payment configurations created'
+      });
+    }
 
+    res.json({
+      success: true,
+      data: configs
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/admin/advance-payment-config/:category
+// @desc    Update advance payment configuration for a category
+// @access  Private (Admin only)
+router.put('/advance-payment-config/:category', [
+  auth,
+  authorize('admin'),
+  body('percentageOptions').isArray().withMessage('Percentage options must be an array'),
+  body('percentageOptions.*.percentage').isInt({ min: 10, max: 100 }).withMessage('Percentage must be between 10-100'),
+  body('percentageOptions.*.label').notEmpty().withMessage('Label is required'),
+  body('defaultPercentage').isInt({ min: 10, max: 100 }).withMessage('Default percentage must be between 10-100')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { category } = req.params;
+    const { percentageOptions, defaultPercentage } = req.body;
+
+    // Validate category
+    const validCategories = ['aggregate', 'sand', 'tmt_steel', 'bricks_blocks', 'cement'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid category'
+      });
+    }
+
+    // Ensure default percentage exists in options
+    const hasDefaultPercentage = percentageOptions.some(option => 
+      option.percentage === defaultPercentage && option.isActive
+    );
+    
+    if (!hasDefaultPercentage) {
+      return res.status(400).json({
+        success: false,
+        message: 'Default percentage must be one of the active percentage options'
+      });
+    }
+
+    // Update or create configuration
+    const updatedConfig = await AdvancePaymentConfig.findOneAndUpdate(
+      { category },
+      {
+        percentageOptions,
+        defaultPercentage,
+        lastUpdatedBy: req.user._id
+      },
+      { 
+        new: true, 
+        upsert: true,
+        runValidators: true
+      }
+    ).populate('lastUpdatedBy', 'name email');
+
+    res.json({
+      success: true,
+      data: updatedConfig,
+      message: `Advance payment configuration updated for ${category}`
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/admin/advance-payment-config/bulk-update
+// @desc    Bulk update multiple category configurations
+// @access  Private (Admin only)
+router.post('/advance-payment-config/bulk-update', [
+  auth,
+  authorize(['admin']),
+  body('configs').isArray().withMessage('Configs must be an array'),
+  body('configs.*.category').isIn(['aggregate', 'sand', 'tmt_steel', 'bricks_blocks', 'cement']).withMessage('Invalid category'),
+  body('configs.*.percentageOptions').isArray().withMessage('Percentage options must be an array'),
+  body('configs.*.defaultPercentage').isInt({ min: 10, max: 100 }).withMessage('Default percentage must be between 10-100')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { configs } = req.body;
+    const updatedConfigs = [];
+
+    for (const config of configs) {
+      const updatedConfig = await AdvancePaymentConfig.findOneAndUpdate(
+        { category: config.category },
+        {
+          percentageOptions: config.percentageOptions,
+          defaultPercentage: config.defaultPercentage,
+          lastUpdatedBy: req.user._id
+        },
+        { 
+          new: true, 
+          upsert: true,
+          runValidators: true
+        }
+      ).populate('lastUpdatedBy', 'name email');
+      
+      updatedConfigs.push(updatedConfig);
+    }
+
+    res.json({
+      success: true,
+      data: updatedConfigs,
+      message: 'Bulk update completed successfully'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/admin/advance-payment-config/:category/options
+// @desc    Get advance payment options for a specific category
+// @access  Private (Admin only)
+router.get('/advance-payment-config/:category/options', auth, async (req, res, next) => {
+  try {
+    const { category } = req.params;
+    
+    const options = await AdvancePaymentConfig.getAdvanceOptionsForCategory(category);
+    
+    res.json({
+      success: true,
+      data: options
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add this after the approve endpoint (around line 7250)
+
+// @route   POST /api/admin/pilots/:pilotId/reject
+// @desc    Reject a pilot
+// @access  Private (Admin)
+router.post('/pilots/:pilotId/reject', auth, authorize('admin'), [
+  param('pilotId').notEmpty().withMessage('Pilot ID is required'),
+  body('reason').trim().isLength({ min: 10, max: 500 }).withMessage('Rejection reason must be 10-500 characters')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { pilotId } = req.params;
+    const { reason } = req.body;
+
+    const pilot = await Pilot.findOne({
+      $or: [{ _id: pilotId }, { pilotId }]
+    });
+    
+    if (!pilot) {
+      return next(new ErrorHandler('Pilot not found', 404));
+    }
+
+    if (pilot.rejectedAt) {
+      return next(new ErrorHandler('Pilot is already rejected', 400));
+    }
+
+    // Reject pilot
+    pilot.isApproved = false;
+    pilot.isActive = false;
+    pilot.rejectedBy = req.user._id;
+    pilot.rejectedAt = new Date();
+    pilot.rejectionReason = reason;
+
+    await pilot.save();
+
+    // Send rejection notification (optional)
+    try {
+      await sendPilotRejectionNotification(pilot, reason);
+    } catch (error) {
+      console.error('Failed to send rejection notification:', error);
+    }
+
+    res.json({
+      success: true,
+      message: 'Pilot rejected successfully',
+      data: {
+        pilot: {
+          pilotId: pilot.pilotId,
+          name: pilot.name,
+          isApproved: pilot.isApproved,
+          rejectedAt: pilot.rejectedAt,
+          rejectionReason: pilot.rejectionReason
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
 module.exports = router;

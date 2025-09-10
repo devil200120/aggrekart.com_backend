@@ -1,0 +1,357 @@
+{
+  "info": {
+    "name": "Aggrekart Pilot API - UPDATED",
+    "description": "Complete collection for testing Aggrekart pilot endpoints with FIXED address bug - includes authentication, order management, and delivery operations",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://aggrekart-com-backend.onrender.com/api/pilot",
+      "type": "string"
+    },
+    {
+      "key": "local_url", 
+      "value": "http://localhost:5000/api/pilot",
+      "type": "string"
+    },
+    {
+      "key": "pilot_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pilot_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "test_phone",
+      "value": "9876543210",
+      "type": "string"
+    },
+    {
+      "key": "test_order_id",
+      "value": "AGK1756201614516ANT",
+      "type": "string"
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🏥 Health & Config",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/../health",
+              "host": ["{{base_url}}"],
+              "path": ["..", "health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "App Configuration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/app/config",
+              "host": ["{{base_url}}"],
+              "path": ["app", "config"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Support FAQs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/support/faqs",
+              "host": ["{{base_url}}"],
+              "path": ["support", "faqs"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🔑 Authentication",
+      "item": [
+        {
+          "name": "1. Request Login OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.otp) {",
+                  "        pm.environment.set('otp', response.data.otp);",
+                  "        console.log('OTP saved:', response.data.otp);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{test_phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Login with OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.token) {",
+                  "        pm.environment.set('pilot_token', response.data.token);",
+                  "        pm.environment.set('pilot_id', response.data.pilot.pilotId);",
+                  "        console.log('Token saved:', response.data.token.substring(0, 30) + '...');",
+                  "        console.log('Pilot ID saved:', response.data.pilot.pilotId);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{test_phone}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🔍 SCAN ORDER - FIXED ADDRESS BUG",
+      "item": [
+        {
+          "name": "✅ Scan Order QR Code (ADDRESS BUG FIXED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.order) {",
+                  "        const order = response.data.order;",
+                  "        console.log('✅ SCAN ORDER SUCCESS - ADDRESS BUG FIXED!');",
+                  "        console.log('='.repeat(50));",
+                  "        console.log('👤 Customer:', order.customer.name);",
+                  "        console.log('🏠 Customer Address:', order.customer.address);",
+                  "        console.log('🏢 Supplier:', order.supplier.companyName);", 
+                  "        console.log('🏭 Supplier Address:', order.supplier.address);",
+                  "        console.log('📍 Pickup Address:', order.deliveryAddress.pickup);",
+                  "        console.log('🚚 Drop Address:', order.deliveryAddress.drop);",
+                  "        console.log('💰 Total Amount: ₹' + order.totalAmount);",
+                  "        console.log('📦 Order Status:', order.status);",
+                  "        console.log('='.repeat(50));",
+                  "        ",
+                  "        // Validate the fix",
+                  "        const issues = [];",
+                  "        if (!order.customer.address || order.customer.address.includes('not available')) {",
+                  "            issues.push('❌ Customer address still missing');",
+                  "        }",
+                  "        if (!order.supplier.address || order.supplier.address.includes('not available')) {",
+                  "            issues.push('❌ Supplier address still missing');",
+                  "        }",
+                  "        if (!order.deliveryAddress.pickup || order.deliveryAddress.pickup.includes('not available')) {",
+                  "            issues.push('❌ Pickup address still missing');",
+                  "        }",
+                  "        if (!order.deliveryAddress.drop || order.deliveryAddress.drop.includes('not available')) {",
+                  "            issues.push('❌ Drop address still missing');",
+                  "        }",
+                  "        if (!order.totalAmount || order.totalAmount === 0) {",
+                  "            issues.push('❌ Total amount is 0 or missing');",
+                  "        }",
+                  "        ",
+                  "        if (issues.length > 0) {",
+                  "            console.log('🚨 REMAINING ISSUES:');",
+                  "            issues.forEach(issue => console.log('   ' + issue));",
+                  "        } else {",
+                  "            console.log('🎉 ALL ADDRESS FIELDS ARE WORKING CORRECTLY!');",
+                  "            console.log('✅ No more N/A values in mobile app!');",
+                  "        }",
+                  "        ",
+                  "        // Set test assertions",
+                  "        pm.test('Customer address is not N/A', function() {",
+                  "            pm.expect(order.customer.address).to.not.equal('Address not available');",
+                  "            pm.expect(order.customer.address).to.not.equal('N/A');",
+                  "        });",
+                  "        ",
+                  "        pm.test('Supplier address is not N/A', function() {",
+                  "            pm.expect(order.supplier.address).to.not.equal('Supplier address not available');",
+                  "            pm.expect(order.supplier.address).to.not.equal('N/A');",
+                  "        });",
+                  "        ",
+                  "        pm.test('Total amount is greater than 0', function() {",
+                  "            pm.expect(order.totalAmount).to.be.greaterThan(0);",
+                  "        });",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pilot_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{test_order_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/scan-order",
+              "host": ["{{base_url}}"],
+              "path": ["scan-order"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👤 Pilot Management",
+      "item": [
+        {
+          "name": "Get Pilot Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pilot_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/profile/{{pilot_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["profile", "{{pilot_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Pilot Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pilot_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pilot_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard/stats",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Pilot Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pilot_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 12.9716,\n  \"longitude\": 77.5946\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/update-location",
+              "host": ["{{base_url}}"],
+              "path": ["update-location"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

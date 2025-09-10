@@ -1,0 +1,748 @@
+{
+	"info": {
+		"_postman_id": "aggrekart-pilot-api-exact",
+		"name": "Aggrekart Pilot API - Exact Endpoints",
+		"description": "Complete Postman collection for all existing Aggrekart Pilot API endpoints based on actual routes/pilot.js file",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register Pilot",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test Pilot\",\n  \"phoneNumber\": \"8125875444\",\n  \"email\": \"testpilot@example.com\",\n  \"vehicleDetails\": {\n    \"registrationNumber\": \"TS09EA1234\",\n    \"vehicleType\": \"truck\",\n    \"capacity\": 5,\n    \"insuranceValid\": true,\n    \"insuranceExpiry\": \"2025-12-31\",\n    \"rcValid\": true,\n    \"rcExpiry\": \"2025-12-31\"\n  },\n  \"drivingLicense\": {\n    \"number\": \"TS1234567890\",\n    \"validTill\": \"2025-12-31\",\n    \"isValid\": true\n  },\n  \"emergencyContact\": {\n    \"name\": \"Emergency Contact\",\n    \"phoneNumber\": \"9876543210\",\n    \"relation\": \"Father\"\n  },\n  \"workingAreas\": [\n    {\n      \"pincode\": \"560001\",\n      \"area\": \"Bangalore Central\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"register"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login - Send OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Extract OTP if sent in development mode",
+									"if (pm.response.code === 200) {",
+									"    const responseJson = pm.response.json();",
+									"    if (responseJson.success && responseJson.data && responseJson.data.otp) {",
+									"        pm.environment.set('pilot_otp', responseJson.data.otp);",
+									"        console.log('OTP extracted: ' + responseJson.data.otp);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"{{pilot_phone}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login - Verify OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Extract token and pilot info on successful login",
+									"if (pm.response.code === 200) {",
+									"    const responseJson = pm.response.json();",
+									"    if (responseJson.success && responseJson.data) {",
+									"        const token = responseJson.data.token;",
+									"        if (token) {",
+									"            pm.environment.set('pilot_token', token);",
+									"            console.log('Token saved: ' + token);",
+									"        }",
+									"        const pilot = responseJson.data.pilot;",
+									"        if (pilot && pilot.pilotId) {",
+									"            pm.environment.set('pilot_id', pilot.pilotId);",
+									"            pm.environment.set('pilot_name', pilot.name);",
+									"            console.log('Pilot ID: ' + pilot.pilotId);",
+									"        }",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"{{pilot_phone}}\",\n  \"otp\": \"{{pilot_otp}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"login"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Order Management",
+			"item": [
+				{
+					"name": "Scan Order QR Code",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": \"{{test_order_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/scan-order",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"scan-order"
+							]
+						}
+					}
+				},
+				{
+					"name": "Accept Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": \"{{test_order_id}}\",\n  \"pilotId\": \"{{pilot_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/accept-order",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"accept-order"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Delivery Management",
+			"item": [
+				{
+					"name": "Start Journey",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": \"{{test_order_id}}\",\n  \"currentLocation\": {\n    \"latitude\": {{test_latitude}},\n    \"longitude\": {{test_longitude}}\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/start-journey",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"start-journey"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Delivery Status",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": \"{{test_order_id}}\",\n  \"status\": \"in_transit\",\n  \"location\": {\n    \"latitude\": {{test_latitude}},\n    \"longitude\": {{test_longitude}}\n  },\n  \"notes\": \"On the way to delivery location\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/update-delivery-status",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"update-delivery-status"
+							]
+						}
+					}
+				},
+				{
+					"name": "Complete Delivery",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"orderId\": \"{{test_order_id}}\",\n  \"deliveryOTP\": \"123456\",\n  \"deliveryNotes\": \"Delivered successfully\",\n  \"customerRating\": 5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/complete-delivery",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"complete-delivery"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Delivery Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/delivery-details/{{test_order_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"delivery-details",
+								"{{test_order_id}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Profile Management",
+			"item": [
+				{
+					"name": "Get Pilot Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/profile/{{pilot_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"profile",
+								"{{pilot_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Location",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": {{test_latitude}},\n  \"longitude\": {{test_longitude}}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/update-location",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"update-location"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Statistics & Analytics",
+			"item": [
+				{
+					"name": "Get Pilot Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/stats",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"stats"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Delivery History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/delivery-history?page=1&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"delivery-history"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Enhanced Deliveries",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/my-deliveries-enhanced?page=1&limit=10&sortBy=date",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"my-deliveries-enhanced"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "sortBy",
+									"value": "date"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Delivery Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/delivery-analytics?period=month",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"delivery-analytics"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "month"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Earnings Report",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/earnings-report?month=9&year=2025",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"earnings-report"
+							],
+							"query": [
+								{
+									"key": "month",
+									"value": "9"
+								},
+								{
+									"key": "year",
+									"value": "2025"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Dashboard",
+			"item": [
+				{
+					"name": "Get Dashboard Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/dashboard/stats",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"dashboard",
+								"stats"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Dashboard Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/dashboard/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"dashboard",
+								"notifications"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "App Configuration",
+			"item": [
+				{
+					"name": "Get App Config",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/app/config",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"app",
+								"config"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Support",
+			"item": [
+				{
+					"name": "Get FAQs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/pilot/support/faqs",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"support",
+								"faqs"
+							]
+						}
+					}
+				},
+				{
+					"name": "Contact Support",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{pilot_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"subject\": \"Test Support Request\",\n  \"message\": \"This is a test support message\",\n  \"priority\": \"medium\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/pilot/support/contact",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"pilot",
+								"support",
+								"contact"
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "pilot_phone",
+			"value": "8125875444",
+			"type": "string"
+		},
+		{
+			"key": "pilot_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "pilot_otp",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "pilot_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "pilot_name",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "test_order_id",
+			"value": "AGK1756349965508KF3",
+			"type": "string"
+		},
+		{
+			"key": "test_latitude",
+			"value": "12.9716",
+			"type": "string"
+		},
+		{
+			"key": "test_longitude",
+			"value": "77.5946",
+			"type": "string"
+		}
+	]
+}

@@ -1,662 +1,260 @@
-const axios = require('axios');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const BASE_URL = 'http://127.0.0.1:5000/api';
-
-// Test Results Storage
-let testResults = {
-  passed: [],
-  failed: [],
-  warnings: []
-};
-
-// Tokens for authenticated requests
-let tokens = {
-  customer: null,
-  supplier: null,
-  admin: null,
-  pilot: null
-};
-
-// Test Data
-const testData = {
-  user: {
-    name: 'Test User',
-    email: `testuser_${Date.now()}@test.com`,
-    password: 'password123',
-    phoneNumber: '9876543210'
-  },
-  supplier: {
-    name: 'Test Supplier',
-    email: `supplier_${Date.now()}@test.com`,
-    password: 'password123',
-    phoneNumber: '9876543211'
-  },
-  pilot: {
-    name: 'Test Pilot',
-    phoneNumber: '9876543212',
-    email: `pilot_${Date.now()}@test.com`,
-    vehicleDetails: {
-      vehicleType: 'truck',
-      registrationNumber: 'KA01AB1234',
-      capacity: 5
-    },
-    drivingLicense: {
-      number: 'DL123456789',
-      validTill: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-    },
-    emergencyContact: {
-      name: 'Emergency Contact',
-      phoneNumber: '9876543213'
-    }
-  }
-};
-
-// Helper Functions
-const logTest = (testName, status, message = '', data = null) => {
-  const timestamp = new Date().toISOString();
-  const result = { testName, status, message, timestamp, data };
-  
-  if (status === 'PASS') {
-    console.log(`✅ ${testName}: ${message}`);
-    testResults.passed.push(result);
-  } else if (status === 'FAIL') {
-    console.log(`❌ ${testName}: ${message}`);
-    testResults.failed.push(result);
-  } else if (status === 'WARN') {
-    console.log(`⚠️  ${testName}: ${message}`);
-    testResults.warnings.push(result);
-  }
-};
-
-const makeRequest = async (method, url, data = null, headers = {}) => {
+// Connect to database
+async function connectDB() {
   try {
-    const config = {
-      method,
-      url: `${BASE_URL}${url}`,
-      headers: { 'Content-Type': 'application/json', ...headers },
-      timeout: 10000
-    };
-    
-    if (data) {
-      config.data = data;
-    }
-    
-    const response = await axios(config);
-    return { success: true, data: response.data, status: response.status };
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Connected to database');
   } catch (error) {
-    return {
-      success: false,
-      error: error.response?.data || error.message,
-      status: error.response?.status || 500
-    };
+    console.error('❌ Database connection failed:', error.message);
+    process.exit(1);
   }
-};
+}
 
-// Test Categories
+// Import the exact model from your project
+const Pilot = require('./models/Pilot');
 
-// 1. Health & Connectivity Tests
-const testHealthAndConnectivity = async () => {
-  console.log('\n🏥 === HEALTH & CONNECTIVITY TESTS ===\n');
-  
-  // Test server health
-  const healthTest = await makeRequest('GET', '/health');
-  if (healthTest.success) {
-    logTest('Server Health Check', 'PASS', 'Server is running');
-  } else {
-    logTest('Server Health Check', 'FAIL', 'Server is not accessible');
-    return false;
-  }
-  
-  // Test API health
-  const apiHealthTest = await makeRequest('GET', '/api/health');
-  if (apiHealthTest.success) {
-    logTest('API Health Check', 'PASS', 'API endpoints are accessible');
-  } else {
-    logTest('API Health Check', 'FAIL', 'API endpoints are not accessible');
-  }
-  
-  // Test CORS
-  const corsTest = await makeRequest('GET', '/test-cors');
-  if (corsTest.success) {
-    logTest('CORS Configuration', 'PASS', 'CORS is properly configured');
-  } else {
-    logTest('CORS Configuration', 'WARN', 'CORS test endpoint not found');
-  }
-  
-  return true;
-};
-
-// 2. Authentication API Tests
-const testAuthenticationAPIs = async () => {
-  console.log('\n🔐 === AUTHENTICATION API TESTS ===\n');
-  
-  // Test user registration
-  const registerTest = await makeRequest('POST', '/auth/register', {
-    ...testData.user,
-    role: 'customer'
-  });
-  
-  if (registerTest.success) {
-    logTest('User Registration', 'PASS', 'User registered successfully');
-  } else {
-    logTest('User Registration', 'FAIL', registerTest.error?.message || 'Registration failed');
-  }
-  
-  // Test user login
-  const loginTest = await makeRequest('POST', '/auth/login', {
-    email: testData.user.email,
-    password: testData.user.password
-  });
-  
-  if (loginTest.success && loginTest.data.data?.token) {
-    tokens.customer = loginTest.data.data.token;
-    logTest('User Login', 'PASS', 'User login successful');
-  } else {
-    logTest('User Login', 'FAIL', loginTest.error?.message || 'Login failed');
-  }
-  
-  // Test OTP sending
-  const otpTest = await makeRequest('POST', '/auth/send-otp', {
-    phoneNumber: '9876543210',
-    type: 'login'
-  });
-  
-  if (otpTest.success) {
-    logTest('Send OTP', 'PASS', 'OTP sent successfully');
+async function fixCurrentOrderMongoDBError() {
+  try {
+    await connectDB();
     
-    // Test OTP verification (using development OTP if available)
-    if (otpTest.data.data?.otp) {
-      const verifyOtpTest = await makeRequest('POST', '/auth/verify-otp', {
-        phoneNumber: '9876543210',
-        otp: otpTest.data.data.otp,
-        type: 'login'
-      });
-      
-      if (verifyOtpTest.success) {
-        logTest('Verify OTP', 'PASS', 'OTP verification successful');
-      } else {
-        logTest('Verify OTP', 'FAIL', verifyOtpTest.error?.message || 'OTP verification failed');
-      }
-    }
-  } else {
-    logTest('Send OTP', 'FAIL', otpTest.error?.message || 'OTP sending failed');
-  }
-  
-  // Test token refresh
-  if (tokens.customer) {
-    const refreshTest = await makeRequest('POST', '/auth/refresh-token', null, {
-      'Authorization': `Bearer ${tokens.customer}`
-    });
+    console.log('🔧 FIXING MONGODB CURRENT ORDER ERRORS');
+    console.log('='.repeat(60));
     
-    if (refreshTest.success) {
-      logTest('Token Refresh', 'PASS', 'Token refreshed successfully');
-    } else {
-      logTest('Token Refresh', 'FAIL', refreshTest.error?.message || 'Token refresh failed');
-    }
-  }
-  
-  // Test logout
-  if (tokens.customer) {
-    const logoutTest = await makeRequest('POST', '/auth/logout', null, {
-      'Authorization': `Bearer ${tokens.customer}`
-    });
+    // Get pilot ID from command line
+    const pilotId = process.argv[2] || 'PIL000001'; // Default to first pilot
     
-    if (logoutTest.success) {
-      logTest('User Logout', 'PASS', 'User logout successful');
-    } else {
-      logTest('User Logout', 'FAIL', logoutTest.error?.message || 'Logout failed');
-    }
-  }
-  
-  // Re-login to get fresh token for subsequent tests
-  const reloginTest = await makeRequest('POST', '/auth/login', {
-    email: testData.user.email,
-    password: testData.user.password
-  });
-  
-  if (reloginTest.success) {
-    tokens.customer = reloginTest.data.data.token;
-  }
-};
-
-// 3. User API Tests
-const testUserAPIs = async () => {
-  console.log('\n👤 === USER API TESTS ===\n');
-  
-  if (!tokens.customer) {
-    logTest('User APIs', 'FAIL', 'No customer token available');
-    return;
-  }
-  
-  // Test get user profile
-  const profileTest = await makeRequest('GET', '/users/profile', null, {
-    'Authorization': `Bearer ${tokens.customer}`
-  });
-  
-  if (profileTest.success) {
-    logTest('Get User Profile', 'PASS', 'Profile retrieved successfully');
-  } else {
-    logTest('Get User Profile', 'FAIL', profileTest.error?.message || 'Profile retrieval failed');
-  }
-  
-  // Test update user profile
-  const updateTest = await makeRequest('PUT', '/users/profile', {
-    name: 'Updated Test User',
-    phoneNumber: '9876543214'
-  }, {
-    'Authorization': `Bearer ${tokens.customer}`
-  });
-  
-  if (updateTest.success) {
-    logTest('Update User Profile', 'PASS', 'Profile updated successfully');
-  } else {
-    logTest('Update User Profile', 'FAIL', updateTest.error?.message || 'Profile update failed');
-  }
-  
-  // Test document upload endpoint (if exists)
-  const uploadTest = await makeRequest('GET', '/users/upload-documents', null, {
-    'Authorization': `Bearer ${tokens.customer}`
-  });
-  
-  if (uploadTest.success) {
-    logTest('Upload Documents Endpoint', 'PASS', 'Upload endpoint available');
-  } else {
-    logTest('Upload Documents Endpoint', 'WARN', 'Upload endpoint not found or not accessible');
-  }
-};
-
-// 4. Order/Booking API Tests
-const testOrderAPIs = async () => {
-  console.log('\n📦 === ORDER/BOOKING API TESTS ===\n');
-  
-  if (!tokens.customer) {
-    logTest('Order APIs', 'FAIL', 'No customer token available');
-    return;
-  }
-  
-  // Test get orders list
-  const ordersTest = await makeRequest('GET', '/orders', null, {
-    'Authorization': `Bearer ${tokens.customer}`
-  });
-  
-  if (ordersTest.success) {
-    logTest('Get Orders List', 'PASS', 'Orders retrieved successfully');
-  } else {
-    logTest('Get Orders List', 'FAIL', ordersTest.error?.message || 'Orders retrieval failed');
-  }
-  
-  // Test create order (checkout)
-  const checkoutTest = await makeRequest('POST', '/orders/checkout', {
-    deliveryAddressId: '507f1f77bcf86cd799439011', // Mock ObjectId
-    paymentMethod: 'cod',
-    items: [{
-      product: '507f1f77bcf86cd799439012',
-      quantity: 1,
-      price: 100
-    }]
-  }, {
-    'Authorization': `Bearer ${tokens.customer}`
-  });
-  
-  if (checkoutTest.success) {
-    logTest('Create Order (Checkout)', 'PASS', 'Order created successfully');
+    console.log(`🎯 Working with pilot: ${pilotId}`);
     
-    // Test get specific order
-    const orderId = checkoutTest.data.data?.order?._id;
-    if (orderId) {
-      const orderDetailTest = await makeRequest('GET', `/orders/${orderId}`, null, {
-        'Authorization': `Bearer ${tokens.customer}`
-      });
-      
-      if (orderDetailTest.success) {
-        logTest('Get Order Details', 'PASS', 'Order details retrieved successfully');
-      } else {
-        logTest('Get Order Details', 'FAIL', orderDetailTest.error?.message || 'Order details retrieval failed');
-      }
-    }
-  } else {
-    logTest('Create Order (Checkout)', 'FAIL', checkoutTest.error?.message || 'Order creation failed');
-  }
-};
-
-// 5. Dashboard API Tests
-const testDashboardAPIs = async () => {
-  console.log('\n📊 === DASHBOARD API TESTS ===\n');
-  
-  // Test pilot dashboard (will test after pilot auth)
-  logTest('Dashboard APIs', 'WARN', 'Will be tested with pilot authentication');
-};
-
-// 6. Location/Map API Tests
-const testLocationAPIs = async () => {
-  console.log('\n🗺️  === LOCATION/MAP API TESTS ===\n');
-  
-  // Test nearby suppliers
-  const nearbyTest = await makeRequest('GET', '/suppliers/nearby?lat=12.9716&lng=77.5946');
-  
-  if (nearbyTest.success) {
-    logTest('Get Nearby Suppliers', 'PASS', 'Nearby suppliers retrieved successfully');
-  } else {
-    logTest('Get Nearby Suppliers', 'FAIL', nearbyTest.error?.message || 'Nearby suppliers retrieval failed');
-  }
-};
-
-// 7. Settings/Support API Tests
-const testSettingsAndSupportAPIs = async () => {
-  console.log('\n⚙️  === SETTINGS/SUPPORT API TESTS ===\n');
-  
-  // Test app config
-  const configTest = await makeRequest('GET', '/pilot/app/config');
-  
-  if (configTest.success) {
-    logTest('Get App Config', 'PASS', 'App config retrieved successfully');
-  } else {
-    logTest('Get App Config', 'FAIL', configTest.error?.message || 'App config retrieval failed');
-  }
-  
-  // Test support FAQs
-  const faqTest = await makeRequest('GET', '/pilot/support/faqs');
-  
-  if (faqTest.success) {
-    logTest('Get Support FAQs', 'PASS', 'FAQs retrieved successfully');
-  } else {
-    logTest('Get Support FAQs', 'FAIL', faqTest.error?.message || 'FAQ retrieval failed');
-  }
-  
-  // Test support contact (need pilot auth)
-  if (tokens.customer) {
-    const supportTest = await makeRequest('POST', '/support/tickets', {
-      subject: 'Test Support Request',
-      description: 'This is a test support request',
-      category: 'technical_support',
-      priority: 'medium'
-    }, {
-      'Authorization': `Bearer ${tokens.customer}`
-    });
-    
-    if (supportTest.success) {
-      logTest('Create Support Ticket', 'PASS', 'Support ticket created successfully');
-    } else {
-      logTest('Create Support Ticket', 'FAIL', supportTest.error?.message || 'Support ticket creation failed');
-    }
-  }
-};
-
-// 8. Pilot API Tests
-const testPilotAPIs = async () => {
-  console.log('\n🚚 === PILOT API TESTS ===\n');
-  
-  // Test pilot registration
-  const pilotRegTest = await makeRequest('POST', '/pilot/register', testData.pilot);
-  
-  if (pilotRegTest.success) {
-    logTest('Pilot Registration', 'PASS', 'Pilot registered successfully');
-    
-    // Approve pilot for testing
+    // Method 1: Try with mongoose model method
+    console.log('\n📝 Method 1: Using Mongoose Model.findOneAndUpdate()');
     try {
-      if (!mongoose.connection.readyState) {
-        await mongoose.connect(process.env.MONGODB_URI);
-      }
-      const Pilot = require('../models/Pilot');
-      await Pilot.findOneAndUpdate(
-        { phoneNumber: testData.pilot.phoneNumber },
-        { isApproved: true, isActive: true }
+      const result1 = await Pilot.findOneAndUpdate(
+        { pilotId: pilotId },
+        { currentOrder: null },
+        { new: true, runValidators: false } // Disable validators
       );
-      logTest('Pilot Auto-Approval', 'PASS', 'Pilot approved for testing');
+      
+      if (result1) {
+        console.log('✅ SUCCESS: Method 1 worked');
+        console.log(`   📦 currentOrder is now: ${result1.currentOrder}`);
+      } else {
+        console.log('❌ FAILED: Pilot not found');
+      }
     } catch (error) {
-      logTest('Pilot Auto-Approval', 'WARN', 'Could not auto-approve pilot');
+      console.log(`❌ Method 1 FAILED: ${error.message}`);
+      console.log(`   Error Code: ${error.code}`);
+      console.log(`   Error Name: ${error.name}`);
     }
     
-    // Test pilot login
-    const pilotLoginTest = await makeRequest('POST', '/pilot/login', {
-      phoneNumber: testData.pilot.phoneNumber
-    });
-    
-    if (pilotLoginTest.success) {
-      logTest('Pilot Login (Send OTP)', 'PASS', 'OTP sent to pilot');
+    // Method 2: Try with $unset operator
+    console.log('\n📝 Method 2: Using $unset to remove field completely');
+    try {
+      const result2 = await Pilot.updateOne(
+        { pilotId: pilotId },
+        { $unset: { currentOrder: "" } }
+      );
       
-      // If development OTP is available, test verification
-      if (pilotLoginTest.data.data?.otp) {
-        const pilotVerifyTest = await makeRequest('POST', '/pilot/login', {
-          phoneNumber: testData.pilot.phoneNumber,
-          otp: pilotLoginTest.data.data.otp
-        });
+      console.log(`✅ Method 2 Result: ${JSON.stringify(result2)}`);
+      if (result2.modifiedCount > 0) {
+        console.log('✅ SUCCESS: Field removed with $unset');
+      }
+    } catch (error) {
+      console.log(`❌ Method 2 FAILED: ${error.message}`);
+    }
+    
+    // Method 3: Try with raw MongoDB operation
+    console.log('\n📝 Method 3: Using Raw MongoDB Collection');
+    try {
+      const result3 = await mongoose.connection.db.collection('pilots').updateOne(
+        { pilotId: pilotId },
+        { $set: { currentOrder: null } }
+      );
+      
+      console.log(`✅ Method 3 Result: ${JSON.stringify(result3)}`);
+      if (result3.modifiedCount > 0) {
+        console.log('✅ SUCCESS: Raw MongoDB operation worked');
+      }
+    } catch (error) {
+      console.log(`❌ Method 3 FAILED: ${error.message}`);
+    }
+    
+    // Method 4: Try setting to undefined instead of null
+    console.log('\n📝 Method 4: Setting to undefined instead of null');
+    try {
+      const result4 = await Pilot.findOneAndUpdate(
+        { pilotId: pilotId },
+        { currentOrder: undefined },
+        { new: true }
+      );
+      
+      if (result4) {
+        console.log('✅ SUCCESS: Method 4 worked with undefined');
+        console.log(`   📦 currentOrder is now: ${result4.currentOrder}`);
+      }
+    } catch (error) {
+      console.log(`❌ Method 4 FAILED: ${error.message}`);
+    }
+    
+    // Method 5: Check for validation issues
+    console.log('\n📝 Method 5: Checking validation and saving manually');
+    try {
+      const pilot = await Pilot.findOne({ pilotId: pilotId });
+      if (pilot) {
+        console.log(`   📋 Current currentOrder: ${pilot.currentOrder}`);
+        console.log(`   📋 Type: ${typeof pilot.currentOrder}`);
         
-        if (pilotVerifyTest.success) {
-          tokens.pilot = pilotVerifyTest.data.data.token;
-          logTest('Pilot Login (Verify OTP)', 'PASS', 'Pilot login successful');
-          
-          // Test pilot dashboard stats
-          const dashboardTest = await makeRequest('GET', '/pilot/dashboard/stats', null, {
-            'Authorization': `Bearer ${tokens.pilot}`
-          });
-          
-          if (dashboardTest.success) {
-            logTest('Pilot Dashboard Stats', 'PASS', 'Dashboard stats retrieved successfully');
-          } else {
-            logTest('Pilot Dashboard Stats', 'FAIL', dashboardTest.error?.message || 'Dashboard stats failed');
-          }
-          
-          // Test location update
-          const locationTest = await makeRequest('POST', '/pilot/update-location', {
-            latitude: 12.9716,
-            longitude: 77.5946
-          }, {
-            'Authorization': `Bearer ${tokens.pilot}`
-          });
-          
-          if (locationTest.success) {
-            logTest('Pilot Location Update', 'PASS', 'Location updated successfully');
-          } else {
-            logTest('Pilot Location Update', 'FAIL', locationTest.error?.message || 'Location update failed');
-          }
-          
-          // Test pilot notifications
-          const notificationsTest = await makeRequest('GET', '/pilot/dashboard/notifications', null, {
-            'Authorization': `Bearer ${tokens.pilot}`
-          });
-          
-          if (notificationsTest.success) {
-            logTest('Pilot Notifications', 'PASS', 'Notifications retrieved successfully');
-          } else {
-            logTest('Pilot Notifications', 'FAIL', notificationsTest.error?.message || 'Notifications failed');
-          }
+        // Set to null manually
+        pilot.currentOrder = null;
+        
+        // Validate before saving
+        const validationError = pilot.validateSync();
+        if (validationError) {
+          console.log(`❌ Validation Error: ${validationError.message}`);
         } else {
-          logTest('Pilot Login (Verify OTP)', 'FAIL', pilotVerifyTest.error?.message || 'OTP verification failed');
+          await pilot.save();
+          console.log('✅ SUCCESS: Manual save worked');
         }
       }
-    } else {
-      logTest('Pilot Login (Send OTP)', 'FAIL', pilotLoginTest.error?.message || 'Pilot login failed');
-    }
-  } else {
-    logTest('Pilot Registration', 'FAIL', pilotRegTest.error?.message || 'Pilot registration failed');
-  }
-  
-  // Test pilot support contact
-  if (tokens.pilot) {
-    const pilotSupportTest = await makeRequest('POST', '/pilot/support/contact', {
-      subject: 'Test Pilot Support',
-      message: 'This is a test support message from pilot'
-    }, {
-      'Authorization': `Bearer ${tokens.pilot}`
-    });
-    
-    if (pilotSupportTest.success) {
-      logTest('Pilot Support Contact', 'PASS', 'Support request sent successfully');
-    } else {
-      logTest('Pilot Support Contact', 'FAIL', pilotSupportTest.error?.message || 'Support request failed');
-    }
-  }
-};
-
-// 9. Additional API Tests
-const testAdditionalAPIs = async () => {
-  console.log('\n🔧 === ADDITIONAL API TESTS ===\n');
-  
-  // Test products API
-  const productsTest = await makeRequest('GET', '/products?limit=5');
-  if (productsTest.success) {
-    logTest('Get Products', 'PASS', 'Products retrieved successfully');
-  } else {
-    logTest('Get Products', 'FAIL', productsTest.error?.message || 'Products retrieval failed');
-  }
-  
-  // Test cart APIs (if customer token available)
-  if (tokens.customer) {
-    const cartTest = await makeRequest('GET', '/cart', null, {
-      'Authorization': `Bearer ${tokens.customer}`
-    });
-    
-    if (cartTest.success) {
-      logTest('Get Cart', 'PASS', 'Cart retrieved successfully');
-    } else {
-      logTest('Get Cart', 'FAIL', cartTest.error?.message || 'Cart retrieval failed');
-    }
-  }
-  
-  // Test wishlist APIs
-  if (tokens.customer) {
-    const wishlistTest = await makeRequest('GET', '/wishlist', null, {
-      'Authorization': `Bearer ${tokens.customer}`
-    });
-    
-    if (wishlistTest.success) {
-      logTest('Get Wishlist', 'PASS', 'Wishlist retrieved successfully');
-    } else {
-      logTest('Get Wishlist', 'FAIL', wishlistTest.error?.message || 'Wishlist retrieval failed');
-    }
-  }
-  
-  // Test payment methods
-  const paymentMethodsTest = await makeRequest('GET', '/payments/methods');
-  if (paymentMethodsTest.success) {
-    logTest('Get Payment Methods', 'PASS', 'Payment methods retrieved successfully');
-  } else {
-    logTest('Get Payment Methods', 'FAIL', paymentMethodsTest.error?.message || 'Payment methods failed');
-  }
-};
-
-// Cleanup function
-const cleanup = async () => {
-  console.log('\n🧹 === CLEANUP ===\n');
-  
-  try {
-    if (!mongoose.connection.readyState) {
-      await mongoose.connect(process.env.MONGODB_URI);
+    } catch (error) {
+      console.log(`❌ Method 5 FAILED: ${error.message}`);
+      if (error.errors) {
+        Object.keys(error.errors).forEach(field => {
+          console.log(`   📋 Field Error [${field}]: ${error.errors[field].message}`);
+        });
+      }
     }
     
-    const User = require('../models/User');
-    const Pilot = require('../models/Pilot');
-    const Ticket = require('../models/Ticket');
-    
-    // Clean up test data
-    await User.deleteOne({ email: testData.user.email });
-    await User.deleteOne({ email: testData.supplier.email });
-    await Pilot.deleteOne({ phoneNumber: testData.pilot.phoneNumber });
-    await Ticket.deleteMany({ 
-      $or: [
-        { subject: 'Test Support Request' },
-        { subject: 'Test Pilot Support' }
-      ]
-    });
-    
-    logTest('Cleanup', 'PASS', 'Test data cleaned up successfully');
-    
-    if (mongoose.connection.readyState) {
-      await mongoose.connection.close();
+    // Method 6: Force reset using replaceOne
+    console.log('\n📝 Method 6: Using replaceOne (nuclear option)');
+    try {
+      const pilot = await Pilot.findOne({ pilotId: pilotId }).lean();
+      if (pilot) {
+        // Remove the currentOrder field entirely
+        delete pilot.currentOrder;
+        
+        const result6 = await Pilot.replaceOne(
+          { pilotId: pilotId },
+          { ...pilot, currentOrder: null }
+        );
+        
+        console.log(`✅ Method 6 Result: ${JSON.stringify(result6)}`);
+        if (result6.modifiedCount > 0) {
+          console.log('✅ SUCCESS: replaceOne worked');
+        }
+      }
+    } catch (error) {
+      console.log(`❌ Method 6 FAILED: ${error.message}`);
     }
+    
+    // Final verification
+    console.log('\n🔍 FINAL VERIFICATION:');
+    console.log('-'.repeat(40));
+    try {
+      const finalPilot = await Pilot.findOne({ pilotId: pilotId });
+      if (finalPilot) {
+        console.log(`👤 Pilot: ${finalPilot.name}`);
+        console.log(`📦 currentOrder: ${finalPilot.currentOrder}`);
+        console.log(`📋 Type: ${typeof finalPilot.currentOrder}`);
+        console.log(`✅ Is Available: ${finalPilot.isAvailable}`);
+        console.log(`🆓 Can Accept Orders: ${finalPilot.isAvailable && !finalPilot.currentOrder}`);
+      }
+    } catch (error) {
+      console.log(`❌ Verification failed: ${error.message}`);
+    }
+    
+    // Check database indexes that might be causing issues
+    console.log('\n📇 DATABASE INDEX CHECK:');
+    console.log('-'.repeat(40));
+    try {
+      const indexes = await Pilot.collection.getIndexes();
+      console.log('📋 Current indexes on pilots collection:');
+      
+      Object.keys(indexes).forEach(indexName => {
+        const indexSpec = indexes[indexName];
+        console.log(`   📇 ${indexName}:`);
+        
+        if (Array.isArray(indexSpec)) {
+          indexSpec.forEach(field => {
+            console.log(`      - ${field[0]}: ${field[1]}`);
+            if (field[0] === 'currentOrder') {
+              console.log(`      🚨 FOUND currentOrder index - this might cause issues!`);
+            }
+          });
+        } else {
+          console.log(`      ${JSON.stringify(indexSpec)}`);
+        }
+      });
+    } catch (error) {
+      console.log(`❌ Index check failed: ${error.message}`);
+    }
+    
+    console.log('\n💡 TROUBLESHOOTING TIPS:');
+    console.log('-'.repeat(40));
+    console.log('1. 🔍 Check if there are any unique indexes on currentOrder');
+    console.log('2. 🛡️  Check MongoDB logs for detailed error messages');
+    console.log('3. 🔄 Try using MongoDB Compass to manually update the field');
+    console.log('4. 📋 Verify the pilot document structure is not corrupted');
+    console.log('5. 🚀 Consider dropping and recreating indexes if needed');
+    
   } catch (error) {
-    logTest('Cleanup', 'WARN', `Cleanup partially failed: ${error.message}`);
+    console.error('❌ Script failed:', error);
+    console.error('Stack trace:', error.stack);
+  } finally {
+    await mongoose.connection.close();
+    console.log('\n🔐 Database connection closed');
   }
-};
+}
 
-// Print test results
-const printResults = () => {
-  console.log('\n📋 === TEST RESULTS SUMMARY ===\n');
-  
-  const total = testResults.passed.length + testResults.failed.length + testResults.warnings.length;
-  
-  console.log(`📊 Total Tests: ${total}`);
-  console.log(`✅ Passed: ${testResults.passed.length}`);
-  console.log(`❌ Failed: ${testResults.failed.length}`);
-  console.log(`⚠️  Warnings: ${testResults.warnings.length}`);
-  
-  if (testResults.failed.length > 0) {
-    console.log('\n❌ FAILED TESTS:');
-    testResults.failed.forEach(test => {
-      console.log(`   • ${test.testName}: ${test.message}`);
-    });
-  }
-  
-  if (testResults.warnings.length > 0) {
-    console.log('\n⚠️  WARNINGS:');
-    testResults.warnings.forEach(test => {
-      console.log(`   • ${test.testName}: ${test.message}`);
-    });
-  }
-  
-  console.log('\n✅ PASSED TESTS:');
-  testResults.passed.forEach(test => {
-    console.log(`   • ${test.testName}: ${test.message}`);
-  });
-  
-  const successRate = ((testResults.passed.length / total) * 100).toFixed(2);
-  console.log(`\n🎯 Success Rate: ${successRate}%\n`);
-};
-
-// Main test runner
-const runAllTests = async () => {
-  console.log('🚀 Starting Comprehensive API Test Suite...\n');
-  console.log(`🔗 Testing against: ${BASE_URL}\n`);
-  
+// Alternative quick fix function
+async function quickFixCurrentOrder() {
   try {
-    // Check server connectivity first
-    const serverUp = await testHealthAndConnectivity();
-    if (!serverUp) {
-      console.log('\n❌ Server is not accessible. Please start your server first.\n');
+    await connectDB();
+    
+    const pilotId = process.argv[2];
+    if (!pilotId) {
+      console.log('❌ Please provide pilot ID: node fix-mongodb-currentorder-error.js PIL000001');
       return;
     }
     
-    // Run all test categories
-    await testAuthenticationAPIs();
-    await testUserAPIs();
-    await testOrderAPIs();
-    await testDashboardAPIs();
-    await testLocationAPIs();
-    await testSettingsAndSupportAPIs();
-    await testPilotAPIs();
-    await testAdditionalAPIs();
+    console.log(`🚑 QUICK FIX for pilot: ${pilotId}`);
     
-    // Cleanup test data
-    await cleanup();
+    // The most reliable method - raw MongoDB update
+    const result = await mongoose.connection.db.collection('pilots').updateOne(
+      { pilotId: pilotId },
+      { 
+        $unset: { currentOrder: 1 },
+        $set: { 
+          isAvailable: true,
+          updatedAt: new Date()
+        }
+      }
+    );
     
-    // Print final results
-    printResults();
+    if (result.matchedCount > 0) {
+      console.log('✅ SUCCESS: Pilot fixed and available for orders');
+      
+      // Verify
+      const pilot = await mongoose.connection.db.collection('pilots').findOne({ pilotId: pilotId });
+      console.log(`📦 currentOrder: ${pilot.currentOrder}`);
+      console.log(`✅ isAvailable: ${pilot.isAvailable}`);
+    } else {
+      console.log('❌ No pilot found with that ID');
+    }
     
   } catch (error) {
-    console.error('\n💥 Test suite failed with error:', error);
-    logTest('Test Suite', 'FAIL', `Critical error: ${error.message}`);
+    console.error('❌ Quick fix failed:', error.message);
+  } finally {
+    await mongoose.connection.close();
   }
-};
+}
 
-// Export for external use
-module.exports = {
-  runAllTests,
-  testResults,
-  BASE_URL
-};
+// Run based on command line arguments
+const action = process.argv[3];
 
-// Run if called directly
-if (require.main === module) {
-  runAllTests()
-    .then(() => {
-      console.log('🏁 Test suite completed!');
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('💥 Test suite crashed:', error);
-      process.exit(1);
-    });
+if (action === 'quick') {
+  quickFixCurrentOrder();
+} else {
+  fixCurrentOrderMongoDBError();
 }

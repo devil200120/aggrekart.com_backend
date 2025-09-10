@@ -30,23 +30,34 @@ const normalizeSubcategory = (subcategory, category) => {
   }
   
   if (category === 'bricks_blocks') {
-    // Convert "Fly Ash Bricks" -> "fly_ash_bricks"
     return subcategory.toLowerCase().replace(/\s+/g, '_');
   }
   
   if (category === 'cement') {
-    // Convert cement subcategories
     const lowerSub = subcategory.toLowerCase();
+    
+    // Handle "OPC Cement" -> default to opc_53
+    if (lowerSub === 'opc cement' || lowerSub === 'opc') return 'opc_53';
+    
+    // Handle specific grades
     if (lowerSub.includes('opc') && lowerSub.includes('53')) return 'opc_53';
     if (lowerSub.includes('opc') && lowerSub.includes('43')) return 'opc_43';
-    if (lowerSub.includes('opc') && !lowerSub.includes('53') && !lowerSub.includes('43')) return 'opc_53';
+    if (lowerSub.includes('opc') && lowerSub.includes('33')) return 'opc_33';
+    
+    // Handle PPC variations
     if (lowerSub.includes('ppc')) return 'ppc';
+    if (lowerSub.includes('portland pozzolana')) return 'ppc';
+    
+    // Handle white cement
     if (lowerSub.includes('white')) return 'white_cement';
-    return 'opc_53';
+    
+    // Default OPC to 53 grade if no specific grade mentioned
+    if (lowerSub.includes('opc')) return 'opc_53';
+    
+    return 'opc_53'; // Default fallback for cement
   }
   
   if (category === 'sand') {
-    // Convert sand subcategories
     const lowerSub = subcategory.toLowerCase();
     if (lowerSub.includes('plastering')) return 'river_sand_plastering';
     if (lowerSub.includes('river')) return 'river_sand';
@@ -55,7 +66,6 @@ const normalizeSubcategory = (subcategory, category) => {
   
   return subcategory;
 };
-
 async function updateCoordinatesIfAddressChanged(supplier, reqBody) {
   // Check if any address field is being updated
   const addressFields = ['companyAddress', 'city', 'state', 'pincode'];
@@ -90,7 +100,10 @@ router.post('/register-new', [
   // User validation
   body('email').isEmail().withMessage('Please provide a valid email'),
   body('phoneNumber').matches(/^[6-9]\d{9}$/).withMessage('Please provide a valid phone number'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password')
+  .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+  .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/)
+  .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
   body('contactPersonName').trim().isLength({ min: 2 }).withMessage('Contact person name is required'),
   
   // Supplier validation
@@ -838,28 +851,42 @@ if (!supplier.isActive) {
 
     // Create a complete date range with zero values for missing dates
     const salesData = [];
-    for (let i = daysInt - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateString = date.toISOString().split('T')[0];
-      
-      // Find matching order data for this date
-      const dayData = orderAggregation.find(item => {
-        const itemDate = new Date(item.date).toISOString().split('T')[0];
-        return itemDate === dateString;
-      });
-      
-      salesData.push({
-        date: dateString,
-        revenue: dayData ? dayData.totalRevenue : 0,
-        orders: dayData ? dayData.totalOrders : 0,
-        totalSales: dayData ? dayData.totalRevenue : 0,
-        totalOrders: dayData ? dayData.totalOrders : 0,
-        uniqueCustomers: dayData ? dayData.uniqueCustomers : 0,
-        avgOrderValue: dayData ? dayData.averageOrderValue : 0,
-        totalItems: dayData ? dayData.totalItems : 0
-      });
-    }
+    console.log('🔍 Order aggregation result:', orderAggregation); // Add this debug line first
+
+for (let i = daysInt - 1; i >= 0; i--) {
+  const date = new Date();
+  date.setDate(date.getDate() - i);
+  const dateString = date.toISOString().split('T')[0];
+  
+  // Find matching order data for this date
+  const dayData = orderAggregation.find(item => {
+    const itemDate = new Date(item.date).toISOString().split('T')[0];
+    return itemDate === dateString;
+  });
+  
+  // Add debug logging
+  console.log(`📅 Processing date ${dateString}:`, {
+    dayData: dayData,
+    hasData: !!dayData
+  });
+  
+  const salesEntry = {
+    date: dateString,
+    revenue: dayData ? (dayData.totalRevenue || 0) : 0,
+    orders: dayData ? (dayData.totalOrders || 0) : 0,
+    totalSales: dayData ? (dayData.totalRevenue || 0) : 0,
+    totalOrders: dayData ? (dayData.totalOrders || 0) : 0,
+    uniqueCustomers: dayData ? (dayData.uniqueCustomers || 0) : 0,
+    avgOrderValue: dayData ? (dayData.averageOrderValue || 0) : 0,
+    totalItems: dayData ? (dayData.totalItems || 0) : 0
+  };
+  
+  console.log(`📊 Sales entry for ${dateString}:`, salesEntry);
+  salesData.push(salesEntry);
+}
+
+console.log('🎯 Final salesData length:', salesData.length);
+console.log('🎯 Sample salesData entries:', salesData.slice(0, 3));
 
     // Calculate real growth metrics
     const currentPeriodStats = await Order.aggregate([
@@ -2379,7 +2406,7 @@ const validSubcategories = {
   ],
   'sand': ['river_sand_plastering', 'river_sand'],
   'tmt_steel': ['fe_415', 'fe_500', 'fe_550', 'fe_600'],
-  'bricks_blocks': ['solid_blocks', 'hollow_blocks', 'aac_blocks', 'fly_ash_bricks', 'clay_bricks'],
+  'bricks_blocks': ['solid_blocks', 'hollow_blocks', 'aac_blocks', 'fly_ash_bricks', 'clay_bricks','red_bricks'],
   'cement': ['opc_53', 'opc_43', 'ppc', 'white_cement']
 };
   
@@ -3096,7 +3123,7 @@ if (baseProduct.subcategory) {
     'aggregate': ['stone_aggregate', 'dust', '10_mm_metal', '20_mm_metal', '40_mm_metal', 'gsb', 'wmm', 'm_sand'],
     'sand': ['river_sand_plastering', 'river_sand'],
     'tmt_steel': ['fe_415', 'fe_500', 'fe_550', 'fe_600'],
-    'bricks_blocks': ['solid_blocks', 'hollow_blocks', 'aac_blocks', 'fly_ash_bricks', 'clay_bricks'],
+    'bricks_blocks': ['solid_blocks', 'hollow_blocks', 'aac_blocks', 'fly_ash_bricks', 'clay_bricks','red_bricks'],
     'cement': ['opc_53', 'opc_43', 'ppc', 'white_cement']
   };
   

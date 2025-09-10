@@ -56,14 +56,17 @@ const productSchema = new mongoose.Schema({
     'hollow_blocks', 'Hollow Blocks',
     'aac_blocks', 'AAC Blocks',
     'fly_ash_bricks', 'Fly Ash Bricks',
-    'clay_bricks', 'Clay Bricks'
+    'clay_bricks', 'Clay Bricks',
+    'red_bricks', 'Red Bricks'  // Add this line
+
   ],
   'cement': [
-    'opc_53', 'OPC 53 Grade',
-    'opc_43', 'OPC 43 Grade', 
-    'ppc', 'PPC',
-    'white_cement', 'White Cement'
-  ]
+  'opc_53', 'OPC 53 Grade', 'OPC Cement', 'OPC', // Accept these variations
+  'opc_43', 'OPC 43 Grade',
+  'opc_33', 'OPC 33 Grade', 
+  'ppc', 'PPC', 'Portland Pozzolana Cement', 'PPC Cement',
+  'white_cement', 'White Cement'
+]
 };
       
       const categorySubcategories = validSubcategories[this.category];

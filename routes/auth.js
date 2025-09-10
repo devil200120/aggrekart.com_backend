@@ -308,8 +308,10 @@ router.post('/verify-otp', [
 // @route   POST /api/auth/whatsapp-register
 // @desc    Complete WhatsApp registration after OTP verification
 // @access  Public
+// Replace the whatsapp-register route with this simpler version:
 router.post('/whatsapp-register', [
   body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
+  body('email').optional().isEmail().normalizeEmail().withMessage('Please provide a valid email'), // OPTIONAL EMAIL
   body('phoneNumber').matches(/^\+91[6-9]\d{9}$/).withMessage('Please provide a valid phone number'),
   body('customerType').isIn(['individual', 'contractor', 'architect', 'company']).withMessage('Invalid customer type'),
   body('addresses').isArray().withMessage('Addresses must be an array'),
@@ -328,6 +330,7 @@ router.post('/whatsapp-register', [
 
     const {
       name,
+      email, // OPTIONAL
       phoneNumber,
       customerType,
       addresses,
@@ -358,6 +361,26 @@ router.post('/whatsapp-register', [
         success: false,
         message: 'Phone number not verified. Please verify first.'
       });
+    }
+
+    // Generate email if not provided
+    let userEmail = email;
+    if (!email || !email.trim()) {
+      // Generate random verified email
+      userEmail = `user_${cleanPhoneNumber}_${Date.now()}@aggrekart.com`;
+    } else {
+      // Check if provided email is already in use by another user
+      const emailExists = await User.findOne({ 
+        email: email.toLowerCase(),
+        _id: { $ne: user._id }
+      });
+      
+      if (emailExists) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email address is already registered with another account'
+        });
+      }
     }
 
     // Check if user already completed real registration (not temporary)
@@ -395,7 +418,7 @@ router.post('/whatsapp-register', [
     // Update user with actual registration details
     user.customerId = generateCustomerId();
     user.name = name;
-    user.email = `${cleanPhoneNumber}@whatsapp.aggrekart.com`; // WhatsApp user email
+    user.email = userEmail.toLowerCase(); // Use provided email or generated one
     user.customerType = mappedCustomerType;
     user.addresses = addresses.map((addr, index) => ({
       type: addr.type || 'home',
@@ -408,7 +431,10 @@ router.post('/whatsapp-register', [
     user.referralCode = userReferralCode;
     user.referredBy = referredBy?._id;
     user.registrationDate = new Date();
-    user.isActive = true; // Activate user after WhatsApp registration
+    user.isActive = true; // Activate user immediately
+    
+    // Set email as verified (no verification needed)
+    user.emailVerified = true; // ALWAYS VERIFIED
 
     // Initialize loyalty system
     user.membershipTier = 'silver';
@@ -422,7 +448,7 @@ router.post('/whatsapp-register', [
       await referredBy.save();
     }
 
-    // Generate JWT token
+    // Generate JWT token immediately
     const token = generateToken(user._id);
 
     // Set cookie
@@ -442,6 +468,7 @@ router.post('/whatsapp-register', [
           id: user._id,
           customerId: user.customerId,
           name: user.name,
+          email: user.email,
           phoneNumber: user.phoneNumber,
           customerType: user.customerType,
           addresses: user.addresses,
@@ -450,7 +477,8 @@ router.post('/whatsapp-register', [
           referralCode: user.referralCode,
           role: user.role,
           phoneVerified: user.phoneVerified,
-          emailVerified: user.emailVerified
+          emailVerified: user.emailVerified, // Always true
+          isActive: user.isActive // Always true
         }
       }
     });
@@ -459,7 +487,7 @@ router.post('/whatsapp-register', [
     console.error('WhatsApp register error:', error);
     next(error);
   }
-});// @route   POST /api/auth/verify-phone
+});
 // @desc    Verify phone number with OTP
 // @access  Public
 // Replace the verify-phone route:

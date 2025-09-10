@@ -28,7 +28,32 @@ const getDeliveryZone = (distance) => {
   return '20km+';
 };
 
-const calculateTransportCost = (distance) => {
+const calculateTransportCost = (distance, supplier) => {
+  // Use supplier's transport rates if available
+  if (supplier.transportRates) {
+    let zone, rates;
+    
+    if (distance <= 5) {
+      zone = "upTo5km";
+      rates = supplier.transportRates.upTo5km;
+    } else if (distance <= 10) {
+      zone = "upTo10km";
+      rates = supplier.transportRates.upTo10km;
+    } else if (distance <= 20) {
+      zone = "upTo20km";
+      rates = supplier.transportRates.upTo20km;
+    } else {
+      zone = "above20km";
+      rates = supplier.transportRates.above20km;
+    }
+    
+    // Simple calculation like ProductDetailPage (no weight factor)
+    const baseCost = rates?.baseCost || 0;
+    const costPerKm = rates?.costPerKm || 0;
+    return Math.round(baseCost + (distance * costPerKm));
+  }
+  
+  // Fallback to old calculation if no transport rates
   if (distance <= 5) return Math.max(distance * 50, 100);
   if (distance <= 10) return Math.max(distance * 75, 200);
   if (distance <= 20) return Math.max(distance * 100, 350);
@@ -51,7 +76,7 @@ router.post('/checkout', auth, authorize('customer'), [
   body('deliveryAddressId').isMongoId().withMessage('Valid delivery address is required'),
   // Update line 28 to include the new payment methods:
 body('paymentMethod').isIn(['cod', 'card', 'upi', 'netbanking', 'wallet', 'razorpay', 'cashfree']).withMessage('Valid payment method is required'),
-  body('advancePercentage').optional().isInt({ min: 25, max: 100 }).withMessage('Advance percentage must be between 25-100'),
+  body('advancePercentage').optional().isInt({ min: 1, max: 100 }).withMessage('Advance percentage must be between 25-100'),
   body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes cannot exceed 500 characters')
 ], async (req, res, next) => {
   try {
@@ -160,22 +185,20 @@ body('paymentMethod').isIn(['cod', 'card', 'upi', 'netbanking', 'wallet', 'razor
       // ADD AFTER Line 157 (after const gstAmount = ...):
 
 // Calculate transport cost
-const transportCost = group.items.reduce((sum, item) => {
-  const supplierCoords = {
-    latitude: item.product.supplier.dispatchLocation?.coordinates?.[1] || 0,
-    longitude: item.product.supplier.dispatchLocation?.coordinates?.[0] || 0
-  };
-  const customerCoords = {
-    latitude: deliveryAddress.coordinates?.latitude || 0,
-    longitude: deliveryAddress.coordinates?.longitude || 0
-  };
-  const distance = calculateDistance(
-    supplierCoords.latitude, supplierCoords.longitude,
-    customerCoords.latitude, customerCoords.longitude
-  );
-  return sum + calculateTransportCost(distance);
-}, 0);
-      
+const firstItem = group.items[0];
+const supplierCoords = {
+  latitude: firstItem.product.supplier.dispatchLocation?.coordinates?.[1] || 0,
+  longitude: firstItem.product.supplier.dispatchLocation?.coordinates?.[0] || 0
+};
+const customerCoords = {
+  latitude: deliveryAddress.coordinates?.latitude || 0,
+  longitude: deliveryAddress.coordinates?.longitude || 0
+};
+const distance = calculateDistance(
+  supplierCoords.latitude, supplierCoords.longitude,
+  customerCoords.latitude, customerCoords.longitude
+);
+const transportCost = calculateTransportCost(distance, firstItem.product.supplier);
       const totalAmount = subtotal + commission + gstAmount + paymentGatewayCharges + transportCost;
 
       // Generate order ID
@@ -202,7 +225,7 @@ const transportCost = group.items.reduce((sum, item) => {
             customerCoords.latitude, customerCoords.longitude
           );
           const deliveryZone = getDeliveryZone(distance);
-          const transportCost = calculateTransportCost(distance);
+          const transportCost = calculateTransportCost(distance, item.product.supplier);
           const estimatedHours = Math.max(2, Math.round((distance / 40) * 100) / 100);
 
           return {
@@ -258,25 +281,11 @@ const transportCost = group.items.reduce((sum, item) => {
         // FIXED: Pricing structure matching the model
         pricing: {
           subtotal: subtotal, // FIXED: Required field
-          transportCost: group.items.reduce((sum, item) => {
-            const supplierCoords = {
-              latitude: item.product.supplier.dispatchLocation?.coordinates?.[1] || 0,
-              longitude: item.product.supplier.dispatchLocation?.coordinates?.[0] || 0
-            };
-            const customerCoords = {
-              latitude: deliveryAddress.coordinates?.latitude || 0,
-              longitude: deliveryAddress.coordinates?.longitude || 0
-            };
-            const distance = calculateDistance(
-              supplierCoords.latitude, supplierCoords.longitude,
-              customerCoords.latitude, customerCoords.longitude
-            );
-            return sum + calculateTransportCost(distance);
-          }, 0),
+          transportCost: transportCost, // Use the already calculated transportCost variable
           gstAmount: gstAmount,
           commission: commission,
           paymentGatewayCharges: paymentGatewayCharges,
-          totalAmount: totalAmount // FIXED: Required field
+          totalAmount: Math.round(totalAmount * 100) / 100 // FIXED: Keep amount in rupees, just round to 2 decimals
         },
         
         // FIXED: Payment structure matching the model
